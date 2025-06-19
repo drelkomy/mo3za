@@ -21,9 +21,10 @@ return new class extends Migration
             $table->enum('gender', ['male', 'female'])->nullable();
             $table->date('birthdate')->nullable();
             $table->boolean('is_active')->default(true);
+            $table->enum('user_type', ['admin', 'member'])->default('member');
             $table->string('avatar_url')->nullable();
-            $table->foreignId('area_id')->nullable()->constrained()->onDelete('set null');
-            $table->foreignId('city_id')->nullable()->constrained()->onDelete('set null');
+            $table->unsignedBigInteger('area_id')->nullable();
+            $table->unsignedBigInteger('city_id')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
