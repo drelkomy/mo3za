@@ -13,40 +13,71 @@ use Illuminate\Database\Eloquent\Builder;
 
 class RewardResource extends Resource
 {
-    protected static ?string $model = TaskReward::class;
+    protected static ?string $model = \App\Models\Reward::class;
     protected static ?string $navigationIcon = 'heroicon-o-gift';
-    protected static bool $shouldRegisterNavigation = true;
+    protected static bool $shouldRegisterNavigation = false;
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
     protected static ?string $navigationLabel = 'المكافآت';
     protected static ?string $pluralLabel = 'المكافآت';
     protected static ?string $label = 'مكافأة';
     protected static ?int $navigationSort = 6;
     protected static ?string $navigationGroup = null;
 
+
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
     public static function canCreate(): bool
     {
-        return false;
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function form(Form $form): Form
     {
         $user = auth()->user();
-        $isSupporter = $user->hasRole('داعم');
+        $isMember = $user->hasRole('member');
         
         $schema = [
-            Forms\Components\Select::make('user_id')
-                ->relationship('user', 'name', function ($query) use ($user, $isSupporter) {
-                    if ($isSupporter) {
-                        return $query->where('supporter_id', $user->id);
+            Forms\Components\Select::make('member_id')
+                ->relationship('user', 'name', function ($query) use ($user, $isMember) {
+                    if ($isMember) {
+                        return $query->where('member_id', $user->id);
                     }
                     return $query;
                 })
-                ->label('المشارك')
+                ->label('عضو')
                 ->required()
                 ->searchable(),
             Forms\Components\Select::make('task_id')
-                ->relationship('task', 'title', function ($query) use ($user, $isSupporter) {
-                    if ($isSupporter) {
-                        return $query->where('supporter_id', $user->id);
+                ->relationship('task', 'title', function ($query) use ($user, $isMember) {
+                    if ($isMember) {
+                        return $query->where('member_id', $user->id);
                     }
                     return $query;
                 })
@@ -76,6 +107,7 @@ class RewardResource extends Resource
                 ->label('الحالة')
                 ->options([
                     'pending' => 'قيد الانتظار',
+                    'completed' => 'مكتملة',
                     'paid' => 'تم الدفع',
                     'cancelled' => 'ملغية',
                 ])
@@ -196,14 +228,14 @@ class RewardResource extends Resource
             return $query;
         }
 
-        if ($user->hasRole('داعم')) {
-            // الداعم يرى مكافآت المشاركين التابعين له
+        if ($user->hasRole('member')) {
+            // العضو يرى مكافآت الأعضاء التابعين له
             return $query->whereHas('user', function ($q) use ($user) {
-                $q->where('supporter_id', $user->id);
+                $q->where('member_id', $user->id);
             });
-        } elseif ($user->hasRole('مشارك')) {
-            // المشارك يرى مكافآته فقط
-            return $query->where('user_id', $user->id);
+        } elseif ($user->hasRole('member')) {
+            // العضو يرى مكافآته فقط
+            return $query->where('member_id', $user->id);
         }
 
         return $query;

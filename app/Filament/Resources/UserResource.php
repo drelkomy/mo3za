@@ -17,23 +17,28 @@ class UserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationGroup = 'إدارة المستخدمين';
+    protected static ?string $navigationGroup = 'إدارة الأعضاء';
 
     protected static ?int $navigationSort = 1;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
     public static function getNavigationLabel(): string
     {
-        return 'المستخدمين';
+        return 'الأعضاء';
     }
 
     public static function getModelLabel(): string
     {
-        return 'مستخدم';
+        return 'عضو';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'المستخدمين';
+        return 'الأعضاء';
     }
 
     public static function form(Form $form): Form
@@ -63,7 +68,7 @@ class UserResource extends Resource
                             ->tel()
                             ->maxLength(255),
                         Forms\Components\Select::make('user_type')
-                            ->label('نوع المستخدم')
+                            ->label('نوع العضو')
                             ->options([
                                 'admin' => 'مدير',
                                 'member' => 'عضو',
@@ -120,7 +125,7 @@ class UserResource extends Resource
                     ->label('رقم الهاتف')
                     ->searchable(),
                 Tables\Columns\SelectColumn::make('user_type')
-                    ->label('نوع المستخدم')
+                    ->label('نوع العضو')
                     ->options([
                         'admin' => 'مدير',
                         'member' => 'عضو',
@@ -136,6 +141,7 @@ class UserResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('user_type')
+                    ->label('نوع العضو')
                     ->label('نوع المستخدم')
                     ->options([
                         'admin' => 'مدير',
@@ -160,6 +166,35 @@ class UserResource extends Resource
         return [
             //
         ];
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function getPages(): array

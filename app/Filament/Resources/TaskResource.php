@@ -23,27 +23,56 @@ class TaskResource extends Resource
     protected static ?string $navigationGroup = 'المهام';
     protected static ?int $navigationSort = 10;
 
+    protected static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $user = Auth::user();
         $query = parent::getEloquentQuery();
         
-        // إذا كان المستخدم داعماً، يرى فقط المهام التي أنشأها
-        if ($user->hasRole('داعم') && !$user->hasRole('مدير نظام')) {
-            $query->where('supporter_id', $user->id);
-        }
-        
-        // إذا كان المستخدم مشاركاً، يرى فقط المهام المسندة إليه
-        if ($user->hasRole('مشارك') && !$user->hasRole('داعم') && !$user->hasRole('مدير نظام')) {
+        // العضو غير الأدمن يرى فقط المهام المسندة إليه أو عضو فيها
+        if ($user->hasRole('member') && !$user->hasRole('admin')) {
             $query->where(function($q) use ($user) {
-                $q->where('participant_id', $user->id)
-                  ->orWhereHas('participants', function($q) use ($user) {
+                $q->where('member_id', $user->id)
+                  ->orWhereHas('members', function($q) use ($user) {
                       $q->where('user_id', $user->id);
                   });
             });
         }
         
         return $query;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function form(Form $form): Form
@@ -76,13 +105,13 @@ class TaskResource extends Resource
                         ->label('قيمة المكافأة')
                         ->numeric()
                         ->required()
-                        ->visible(fn () => Auth::user()->hasRole('داعم')),
-                    Forms\Components\Select::make('participant_id')
-                        ->label('المشارك الرئيسي')
-                        ->relationship('participant', 'name')
+                        ->visible(fn () => Auth::user()->hasRole('member')),
+                    Forms\Components\Select::make('member_id')
+                        ->label('العضو الرئيسي')
+                        ->relationship('member', 'name')
                         ->searchable()
                         ->preload()
-                        ->visible(fn () => Auth::user()->hasRole('داعم')),
+                        ->visible(fn () => Auth::user()->hasRole('member')),
                 ])
                 ->columns(2),
         ]);
@@ -117,13 +146,13 @@ class TaskResource extends Resource
                 Tables\Columns\TextColumn::make('reward_amount')
                     ->label('قيمة المكافأة')
                     ->money('SAR')
-                    ->visible(fn () => Auth::user()->hasRole('داعم')),
-                Tables\Columns\TextColumn::make('participant.name')
-                    ->label('المشارك الرئيسي')
-                    ->visible(fn () => Auth::user()->hasRole('داعم')),
+                    ->visible(fn () => Auth::user()->hasRole('member')),
+                Tables\Columns\TextColumn::make('member.name')
+                    ->label('العضو الرئيسي')
+                    ->visible(fn () => Auth::user()->hasRole('member')),
                 Tables\Columns\TextColumn::make('supporter.name')
                     ->label('الداعم')
-                    ->visible(fn () => Auth::user()->hasRole('مشارك')),
+                    ->visible(fn () => Auth::user()->hasRole('member')),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')

@@ -25,46 +25,30 @@ class SubscriptionResource extends Resource
 
     public static function canViewAny(): bool
     {
-        $user = auth()->user();
-        
-        if (!$user) {
-            return false;
-        }
-        
-        // مدير النظام يمكنه الوصول دائماً
-        if ($user->hasRole('مدير نظام')) {
-            return true;
-        }
-        
-        // الداعم يمكنه الوصول دائماً لرؤية سجل اشتراكاته
-        if ($user->hasRole('داعم')) {
-            return true;
-        }
-        
-        return false;
+        return auth()->user()?->hasRole('admin');
     }
     
     public static function canCreate(): bool
     {
-        return auth()->check() && auth()->user()->hasRole('مدير نظام');
+        return auth()->check() && auth()->user()->hasRole('member');
     }
     
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
         $user = auth()->user();
-        if ($user->hasRole('مدير نظام')) {
-            return true;
+        if ($user->hasRole('member')) {
+            return $record->status === 'active' && $record->end_date && now()->lt(\Carbon\Carbon::parse($record->end_date));
         }
-        return auth()->check() && $user->hasRole('داعم') && $record->user->supporter_id == $user->id;
+        return auth()->check() && $user->hasRole('member') && $record->user->supporter_id == $user->id;
     }
     
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
         $user = auth()->user();
-        if ($user->hasRole('مدير نظام')) {
-            return true;
+        if ($user->hasRole('member')) {
+            return $record->status === 'active' && $record->end_date && now()->lt(\Carbon\Carbon::parse($record->end_date));
         }
-        return auth()->check() && $user->hasRole('داعم') && $record->user->supporter_id == $user->id;
+        return auth()->check() && $user->hasRole('member') && $record->user->supporter_id == $user->id;
     }
     
     public static function getEloquentQuery(): Builder
@@ -72,9 +56,9 @@ class SubscriptionResource extends Resource
         $query = parent::getEloquentQuery();
         $user = auth()->user();
         
-        if ($user && $user->hasRole('داعم')) {
+        if ($user && $user->hasRole('member')) {
             // الداعم يرى فقط اشتراكاته الخاصة
-            return $query->where('user_id', $user->id);
+            return $query->where('user_id', $user->id)->where('status', 'active')->where('end_date', '>', now());
         }
         
         // مدير النظام يرى جميع الاشتراكات
@@ -83,23 +67,7 @@ class SubscriptionResource extends Resource
     
     public static function shouldRegisterNavigation(): bool
     {
-        $user = auth()->user();
-        
-        if (!$user) {
-            return false;
-        }
-        
-        // مدير النظام يرى القائمة دائماً
-        if ($user->hasRole('مدير نظام')) {
-            return true;
-        }
-        
-        // الداعم يرى القائمة دائماً لرؤية سجل اشتراكاته
-        if ($user->hasRole('داعم')) {
-            return true;
-        }
-        
-        return false;
+        return auth()->user()?->hasRole('admin');
     }
 
 
@@ -112,7 +80,7 @@ class SubscriptionResource extends Resource
                     ->options(function () {
                         // الحصول على الداعمين النشطين فقط الذين ليس لديهم اشتراك نشط
                         return \App\Models\User::whereHas('roles', function ($q) {
-                                $q->where('name', 'داعم');
+                                $q->where('name', 'member');
                             })
                             ->where('is_active', true)
                             ->whereDoesntHave('subscriptions', function ($q) {
@@ -139,7 +107,7 @@ class SubscriptionResource extends Resource
                                 $set('end_date', $package->duration_in_days ? now()->addDays($package->duration_in_days) : null);
                                 // إضافة معلومات الباقة
                                 $set('max_tasks', $package->max_tasks);
-                                $set('max_participants', $package->max_participants);
+                                $set('max_members', $package->max_members);
                                 $set('max_milestones_per_task', $package->max_milestones_per_task);
                             }
                         }
@@ -157,14 +125,14 @@ class SubscriptionResource extends Resource
                         return 0;
                     })
                     ->reactive(),
-                Forms\Components\TextInput::make('max_participants')
-                    ->label('الحد الأقصى للمشاركين')
+                Forms\Components\TextInput::make('max_members')
+                    ->label('الحد الأقصى للعضوين')
                     ->numeric()
                     ->default(function (callable $get) {
                         $packageId = $get('package_id');
                         if ($packageId) {
                             $package = \App\Models\Package::find($packageId);
-                            return $package ? $package->max_participants : 0;
+                            return $package ? $package->max_members : 0;
                         }
                         return 0;
                     })
@@ -197,7 +165,7 @@ class SubscriptionResource extends Resource
                     ->default('active'),
                 Forms\Components\Hidden::make('tasks_created')
                     ->default(0),
-                Forms\Components\Hidden::make('participants_created')
+                Forms\Components\Hidden::make('members_created')
                     ->default(0),
                 Forms\Components\Hidden::make('previous_tasks_completed')
                     ->default(0),
@@ -259,17 +227,17 @@ class SubscriptionResource extends Resource
                         $remaining = max(0, $record->max_tasks - $usedTasks);
                         return "{$remaining} / {$record->max_tasks}";
                     }),
-                Tables\Columns\TextColumn::make('remaining_participants')
-                    ->label('المشاركين المتبقين')
+                Tables\Columns\TextColumn::make('remaining_members')
+                    ->label('العضوين المتبقين')
                     ->getStateUsing(function ($record) {
                         if (!$record->user) {
                             return 'N/A';
                         }
-                        $usedParticipants = $record->user->participants()
+                        $usedParticipants = $record->user->members()
                             ->where('is_active', true)
                             ->count();
-                        $remaining = max(0, $record->max_participants - $usedParticipants);
-                        return "{$remaining} / {$record->max_participants}";
+                        $remaining = max(0, $record->max_members - $usedParticipants);
+                        return "{$remaining} / {$record->max_members}";
                     }),
                 Tables\Columns\TextColumn::make('start_date')
                     ->label('تاريخ البدء')
@@ -309,7 +277,7 @@ class SubscriptionResource extends Resource
                             'status' => 'active',
                         ]);
                         $record->user->update(['is_active' => true]);
-                        $record->user->participants()->update(['is_active' => true]);
+                        $record->user->members()->update(['is_active' => true]);
                     })
                     ->visible(function($record){
                         $isActive = $record->status === 'active' && 
@@ -327,7 +295,7 @@ class SubscriptionResource extends Resource
                         $record->save();
 
                         if ($record->user) {
-                            $record->user->participants()->update(['is_active' => false]);
+                            $record->user->members()->update(['is_active' => false]);
                         }
                     })
                     ->visible(function($record){
@@ -339,7 +307,7 @@ class SubscriptionResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn () => auth()->user()->hasRole('مدير نظام')),
+                        ->visible(fn () => auth()->user()->hasRole('member')),
                 ]),
             ]);
     }

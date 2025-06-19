@@ -17,34 +17,23 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use Jeffgreco13\FilamentBreezy\BreezyCore;
 
-class AdminPanelProvider extends PanelProvider
+class MemberPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
         return $panel
-            ->default()
-            ->id('admin')
-            ->path('admin')
+            ->id('member')
+            ->path('member')
             ->login()
             ->font('cairo')
-            ->topNavigation()
             ->colors([
                 'primary' =>'#006E82',
             ])
             ->resources([
-                \App\Filament\Resources\UserResource::class,
-                \App\Filament\Resources\TeamResource::class,
                 \App\Filament\Resources\TaskResource::class,
-
                 \App\Filament\Resources\RewardResource::class,
-                \App\Filament\Resources\PackageResource::class,
-                \App\Filament\Resources\SubscriptionResource::class,
-                \App\Filament\Resources\PaymentResource::class,
-                \App\Filament\Resources\FinancialDetailResource::class,
             ])
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 Pages\Dashboard::class,
             ])
@@ -66,18 +55,8 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
-            ->brandName('نظام إدارة المعزز')
+            ->brandName('لوحة العضو')
             ->maxContentWidth('full')
-            ->sidebarCollapsibleOnDesktop()
-            ->navigationGroups([
-                'إدارة المستخدمين',
-                'إدارة الفرق',
-                'إدارة المهام',
-                'الإعدادات',
-            ])
-            ->plugin(
-                BreezyCore::make()
-                    ->myProfile()
-            );
+            ->sidebarCollapsibleOnDesktop();
     }
 }

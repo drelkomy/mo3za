@@ -3,7 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Task;
-use App\Models\TaskReward as Reward;
+use App\Models\Reward;
 use App\Models\Subscription;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -23,7 +23,7 @@ class SubscriptionStatsWidget extends BaseWidget
     {
         $user = auth()->user();
         
-        if (!$user || !$user->hasRole('داعم')) {
+        if (!$user || !$user->hasRole('داعم') || $user->hasRole('admin')) {
             return [
                 Stat::make('حالة الاشتراك', 'غير مشترك')
                     ->description('لا يوجد اشتراك نشط')

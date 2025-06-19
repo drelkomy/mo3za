@@ -17,33 +17,68 @@ class FinancialDetailResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-credit-card';
 
-    protected static ?string $navigationGroup = 'إدارة المالية';
+    protected static ?string $navigationGroup = null;
 
     protected static ?int $navigationSort = 1;
 
     public static function getNavigationLabel(): string
     {
-        return 'البيانات المالية';
+        return 'البيانات العضولية';
     }
 
     public static function getModelLabel(): string
     {
-        return 'بيانات مالية';
+        return 'بيانات عضولية';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'البيانات المالية';
+        return 'البيانات العضولية';
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('البيانات المالية')
+                Forms\Components\Section::make('البيانات العضولية')
                     ->schema([
                         Forms\Components\Select::make('user_id')
-                            ->label('المستخدم')
+                            ->label('العضو')
                             ->relationship('user', 'name')
                             ->searchable()
                             ->preload()
@@ -92,12 +127,9 @@ class FinancialDetailResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                //
             ]);
     }
 
@@ -112,7 +144,6 @@ class FinancialDetailResource extends Resource
     {
         return [
             'index' => Pages\ListFinancialDetails::route('/'),
-            'create' => Pages\CreateFinancialDetail::route('/create'),
             'edit' => Pages\EditFinancialDetail::route('/{record}/edit'),
         ];
     }

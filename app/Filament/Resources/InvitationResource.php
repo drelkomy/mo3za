@@ -17,7 +17,7 @@ class InvitationResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-envelope';
 
-    protected static ?string $navigationGroup = 'إدارة الفرق';
+    protected static ?string $navigationGroup = 'إدارة الأعضاء';
 
     protected static ?int $navigationSort = 2;
 
@@ -43,7 +43,7 @@ class InvitationResource extends Resource
                 Forms\Components\Section::make('معلومات الدعوة')
                     ->schema([
                         Forms\Components\Select::make('sender_id')
-                            ->label('المرسل')
+                            ->label('المدير')
                             ->relationship('sender', 'name')
                             ->searchable()
                             ->preload()
@@ -83,7 +83,7 @@ class InvitationResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('sender.name')
-                    ->label('المرسل')
+                    ->label('المدير')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('team.name')
                     ->label('الفريق')
@@ -145,5 +145,40 @@ class InvitationResource extends Resource
             'create' => Pages\CreateInvitation::route('/create'),
             'edit' => Pages\EditInvitation::route('/{record}/edit'),
         ];
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin') || auth()->user()?->hasRole('member');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && auth()->user()?->hasActiveSubscription());
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && $record->team_id === auth()->user()?->team_id);
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && $record->team_id === auth()->user()?->team_id);
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && $record->team_id === auth()->user()?->team_id);
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && $record->team_id === auth()->user()?->team_id);
+    }
+
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin') || (auth()->user()?->hasRole('member') && $record->team_id === auth()->user()?->team_id);
     }
 }

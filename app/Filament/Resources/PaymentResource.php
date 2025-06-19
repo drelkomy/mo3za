@@ -23,27 +23,36 @@ class PaymentResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return self::canAccess();
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function canViewAny(): bool
     {
-        return self::canAccess();
+        return auth()->user()?->hasRole('admin');
     }
-
     public static function canCreate(): bool
     {
-        return false; // Payments are created automatically
+        return auth()->user()?->hasRole('member');
     }
-
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        return false;
+        return auth()->user()?->hasRole('member');
     }
-
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        return false;
+        return auth()->user()?->hasRole('member');
+    }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('member');
+    }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('member');
+    }
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('member');
     }
 
     public static function getEloquentQuery(): Builder
@@ -51,12 +60,9 @@ class PaymentResource extends Resource
         $query = parent::getEloquentQuery();
         $user = auth()->user();
 
-        if ($user?->hasRole('داعم')) {
-            // Supporters see their payments and their participants' payments
-            return $query->where(function (Builder $q) use ($user) {
-                $q->where('user_id', $user->id)
-                  ->orWhereHas('user', fn (Builder $userQuery) => $userQuery->where('supporter_id', $user->id));
-            });
+        if ($user?->hasRole('member')) {
+            // Members see only their payments
+            return $query->where('user_id', $user->id);
         }
 
         // Admins see all payments
@@ -66,7 +72,7 @@ class PaymentResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Select::make('user_id')->label('المستخدم')->relationship('user', 'name')->searchable()->required(),
+            Forms\Components\Select::make('user_id')->label('العضو')->relationship('user', 'name')->searchable()->required(),
             Forms\Components\Select::make('subscription_id')->label('الاشتراك')->relationship('subscription', 'id')->searchable(),
             Forms\Components\TextInput::make('amount')->label('المبلغ')->money('sar')->required(),
             Forms\Components\TextInput::make('payment_method')->label('طريقة الدفع'),
@@ -80,7 +86,7 @@ class PaymentResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')->label('المستخدم')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('user.name')->label('العضو')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('subscription.id')->label('الاشتراك')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('amount')->label('المبلغ')->money('sar')->sortable(),
                 Tables\Columns\TextColumn::make('payment_method')->label('طريقة الدفع')->searchable(),
@@ -110,7 +116,7 @@ class PaymentResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->hasRole(['مدير نظام', 'داعم']) ?? false;
+        return auth()->user()?->hasRole('admin');
     }
 
     protected static function getStatusOptions(): array

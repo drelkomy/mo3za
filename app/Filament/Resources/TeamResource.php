@@ -21,6 +21,11 @@ class TeamResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
     public static function getNavigationLabel(): string
     {
         return 'الفرق';
@@ -47,7 +52,7 @@ class TeamResource extends Resource
                             ->required()
                             ->maxLength(255),
                         Forms\Components\Select::make('owner_id')
-                            ->label('مالك الفريق')
+                            ->label('عضو الفريق')
                             ->relationship('owner', 'name')
                             ->searchable()
                             ->preload()
@@ -66,13 +71,22 @@ class TeamResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(function (Builder $query) {
+                $user = auth()->user();
+                if ($user && $user->hasRole('member')) {
+                    $query->where('owner_id', $user->id);
+                }
+            })
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('اسم الفريق')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('owner.name')
-                    ->label('مالك الفريق')
+                    ->label('عضو الفريق')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('members_names')
+                    ->label('أعضاء الفريق')
+                    ->getStateUsing(fn($record) => $record->members->pluck('name')->implode('، ')),
                 Tables\Columns\TextColumn::make('members_count')
                     ->label('عدد الأعضاء')
                     ->counts('members'),
@@ -105,6 +119,41 @@ class TeamResource extends Resource
         return [
             //
         ];
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function getPages(): array

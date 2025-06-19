@@ -27,7 +27,31 @@ class PackageResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return self::canAccess();
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
+    }
+    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasRole('admin');
     }
 
     public static function form(Form $form): Form
@@ -55,8 +79,8 @@ class PackageResource extends Resource
                         ->required()
                         ->numeric()
                         ->default(10),
-                    Forms\Components\TextInput::make('max_participants')
-                        ->label('أقصى عدد للمشاركين في المهمة')
+                    Forms\Components\TextInput::make('max_members')
+                        ->label('أقصى عدد للعضوين في المهمة')
                         ->required()
                         ->numeric()
                         ->default(5),
@@ -84,8 +108,8 @@ class PackageResource extends Resource
                     ->label('حد المهام')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('max_participants')
-                    ->label('حد المشاركين')
+                Tables\Columns\TextColumn::make('max_members')
+                    ->label('حد العضوين')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\IconColumn::make('is_active')
