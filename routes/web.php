@@ -15,7 +15,9 @@ use App\Http\Controllers\InvitationController;
 |
 */
 
-Route::get('/', fn () => redirect('/app'));
+Route::get('/', fn () => redirect('/admin'));
+
+Route::get('/login', fn () => redirect('/admin/login'))->name('login');
 
 Route::get('/download-attachment/{path}', function ($path) {
     $filePath = storage_path('app/public/' . $path);
@@ -95,4 +97,8 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
     
     // رفض الدعوة
     Route::get('/{token}/reject', [InvitationController::class, 'reject'])->name('reject');
+    
+    // اختبار إرسال الدعوة بدون طابور (للاختبار فقط)
+    Route::get('/test-send/{invitationId}', [InvitationController::class, 'testSendWithoutQueue'])
+        ->name('test-send');
 });

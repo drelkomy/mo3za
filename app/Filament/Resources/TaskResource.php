@@ -27,10 +27,11 @@ class TaskResource extends Resource
     public static function canCreate(): bool
     {
         $user = auth()->user();
-        if ($user?->hasRole('admin')) return true;
+        if ($user?->hasRole('admin')) return false;
         
-        // يمكن للعضو إنشاء مهام إذا كان (يملك فريق أو عضو في فريق)
-        return $user && ($user->ownedTeams()->exists() || $user->teams()->exists());
+        return $user?->hasActiveSubscription() && 
+               $user?->canAddTasks() && 
+               $user->ownedTeams()->exists();
     }
     
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
@@ -45,9 +46,7 @@ class TaskResource extends Resource
     
     public static function shouldRegisterNavigation(): bool
     {
-        $user = auth()->user();
-        return $user?->hasRole('admin') || 
-               ($user && ($user->ownedTeams()->exists() || $user->teams()->exists()));
+        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
     }
 
     public static function getEloquentQuery(): Builder
@@ -75,45 +74,8 @@ class TaskResource extends Resource
                         ->label('وصف المهمة')
                         ->required()
                         ->columnSpanFull(),
-                    
-                    Forms\Components\Select::make('priority')
-                        ->label('أولوية المهمة')
-                        ->options([
-                            'normal' => 'عادية',
-                            'urgent' => 'عاجلة',
-                        ])
-                        ->default('normal')
-                        ->required(),
-                    
-                    Forms\Components\Toggle::make('is_multiple')
-                        ->label('مهمة متعددة')
-                        ->default(false)
-                        ->reactive(),
-                    
-                    Forms\Components\Select::make('selected_participants')
-                        ->label('اختر المشاركين')
-                        ->multiple()
-                        ->preload()
-                        ->searchable()
-                        ->options(function () {
-                            $user = auth()->user();
-                            if ($user?->hasRole('admin')) {
-                                return \App\Models\User::pluck('name', 'id');
-                            }
-                            
-                            // إظهار أعضاء فريقي فقط
-                            $ownedTeam = $user->ownedTeams()->first();
-                            if ($ownedTeam) {
-                                return $ownedTeam->members()->pluck('users.name', 'users.id')->toArray();
-                            }
-                            
-                            return [];
-                        })
-                        ->visible(fn ($get) => $get('is_multiple'))
-                        ->required(fn ($get) => $get('is_multiple'))
-                        ->placeholder('اختر عدة مشاركين'),
                 ])
-                ->columns(2),
+                ->columns(1),
             
             Forms\Components\Section::make('تفاصيل التكليف')
                 ->schema([
@@ -125,24 +87,16 @@ class TaskResource extends Resource
                                 return \App\Models\User::pluck('name', 'id');
                             }
                             
-                            // إظهار أعضاء فريقي فقط
-                            $ownedTeam = $user->ownedTeams()->first();
-                            if ($ownedTeam) {
-                                return $ownedTeam->members()->pluck('users.name', 'users.id')->toArray();
+                            $team = $user->ownedTeams()->first();
+                            if ($team) {
+                                return $team->members()->pluck('users.name', 'users.id');
                             }
                             
                             return [];
                         })
                         ->searchable()
-                        ->required(fn ($get) => !$get('is_multiple'))
-                        ->visible(fn ($get) => !$get('is_multiple'))
+                        ->required()
                         ->placeholder('اختر عضو من فريقك'),
-                    
-                    Forms\Components\DatePicker::make('start_date')
-                        ->label('تاريخ البداية')
-                        ->default(now())
-                        ->reactive()
-                        ->required(),
                     
                     Forms\Components\TextInput::make('duration_days')
                         ->label('المدة بالأيام')
@@ -150,26 +104,7 @@ class TaskResource extends Resource
                         ->default(7)
                         ->required()
                         ->minValue(1)
-                        ->maxValue(365)
-                        ->reactive()
-                        ->afterStateUpdated(function ($state, $set, $get) {
-                            if ($get('start_date') && is_numeric($state) && $state > 0) {
-                                $start = \Carbon\Carbon::parse($get('start_date'));
-                                $set('due_date', $start->copy()->addDays(intval($state))->toDateString());
-                            }
-                        }),
-                    
-                    Forms\Components\DatePicker::make('due_date')
-                        ->label('تاريخ الانتهاء')
-                        ->afterStateUpdated(function ($state, $set, $get) {
-                            if ($get('start_date') && $state) {
-                                $start = \Carbon\Carbon::parse($get('start_date'));
-                                $end = \Carbon\Carbon::parse($state);
-                                $days = $start->diffInDays($end);
-                                $set('duration_days', $days > 0 ? $days : 1);
-                            }
-                        })
-                        ->reactive(),
+                        ->maxValue(365),
                     
                     Forms\Components\TextInput::make('total_stages')
                         ->label('عدد المراحل')
@@ -181,52 +116,18 @@ class TaskResource extends Resource
                             $user = auth()->user();
                             $subscription = $user?->activeSubscription();
                             return $subscription?->max_milestones_per_task ?? 10;
-                        })
-                        ->helperText(function () {
-                            $user = auth()->user();
-                            $subscription = $user?->activeSubscription();
-                            $max = $subscription?->max_milestones_per_task ?? 10;
-                            return "الحد الأقصى المسموح: {$max} مراحل";
                         }),
-                    
-                    Forms\Components\Select::make('task_status')
-                        ->label('حالة المهمة')
-                        ->options([
-                            'in_progress' => 'قيد التنفيذ',
-                            'cancelled' => 'تم الإلغاء',
-                            'completed' => 'انتهت المهمة',
-                        ])
-                        ->default('in_progress')
-                        ->required(),
-                    
-                    Forms\Components\Select::make('reward_type')
-                        ->label('نوع المكافأة')
-                        ->options([
-                            'cash' => 'نقدي',
-                            'other' => 'أخرى',
-                        ])
-                        ->default('cash')
-                        ->reactive()
-                        ->required(),
                     
                     Forms\Components\TextInput::make('reward_amount')
                         ->label('مبلغ المكافأة')
                         ->numeric()
-                        ->suffix('ريال')
-                        ->visible(fn ($get) => $get('reward_type') === 'cash'),
-                    
-                    Forms\Components\TextInput::make('reward_description')
-                        ->label('وصف المكافأة')
-                        ->visible(fn ($get) => $get('reward_type') === 'other')
-                        ->required(fn ($get) => $get('reward_type') === 'other'),
+                        ->suffix('ريال'),
                 ])
                 ->columns(2),
             
             Forms\Components\Hidden::make('creator_id')->default(auth()->id()),
             Forms\Components\Hidden::make('status')->default('pending'),
-            Forms\Components\Hidden::make('subscription_id')->default(function () {
-                return auth()->user()?->activeSubscription()?->id;
-            }),
+            Forms\Components\Hidden::make('start_date')->default(now()->toDateString()),
         ]);
     }
 
@@ -244,113 +145,77 @@ class TaskResource extends Resource
                     ->badge()
                     ->color('info'),
                 
-                Tables\Columns\TextColumn::make('priority')
-                    ->label('الأولوية')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'normal' => 'عادية',
-                        'urgent' => 'عاجلة',
-                        default => $state,
-                    })
-                    ->color(fn (string $state): string => match ($state) {
-                        'normal' => 'gray',
-                        'urgent' => 'danger',
-                        default => 'gray',
-                    }),
-                
                 Tables\Columns\TextColumn::make('progress')
                     ->label('التقدم')
                     ->formatStateUsing(fn ($state) => $state . '%')
                     ->badge()
                     ->color(fn ($state) => $state == 100 ? 'success' : ($state > 0 ? 'warning' : 'gray')),
                 
-                Tables\Columns\TextColumn::make('task_status')
-                    ->label('حالة المهمة')
+                Tables\Columns\TextColumn::make('status')
+                    ->label('الحالة')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'pending' => 'قيد الانتظار',
                         'in_progress' => 'قيد التنفيذ',
-                        'cancelled' => 'تم الإلغاء',
-                        'completed' => 'انتهت المهمة',
+                        'completed' => 'مكتملة',
                         default => $state,
                     })
                     ->color(fn (string $state): string => match ($state) {
+                        'pending' => 'gray',
                         'in_progress' => 'warning',
-                        'cancelled' => 'danger',
                         'completed' => 'success',
                         default => 'gray',
                     }),
-                
-                Tables\Columns\TextColumn::make('start_date')
-                    ->label('تاريخ البداية')
-                    ->date()
-                    ->sortable(),
                 
                 Tables\Columns\TextColumn::make('due_date')
                     ->label('تاريخ الانتهاء')
                     ->date()
                     ->sortable(),
                 
-                Tables\Columns\TextColumn::make('total_stages')
-                    ->label('عدد المراحل')
-                    ->badge()
-                    ->color('info'),
-                
-                Tables\Columns\TextColumn::make('reward_display')
+                Tables\Columns\TextColumn::make('reward_amount')
                     ->label('المكافأة')
-                    ->formatStateUsing(function (Task $record): string {
-                        if ($record->reward_type === 'cash') {
-                            return number_format($record->reward_amount, 2) . ' ريال';
-                        }
-                        return $record->reward_description ?? 'مكافأة أخرى';
-                    })
+                    ->money('SAR')
                     ->color('success'),
             ])
             ->actions([
-                Tables\Actions\Action::make('cancel')
-                    ->label('إلغاء المهمة')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->action(fn (Task $record) => $record->update(['task_status' => 'cancelled']))
-                    ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->task_status === 'in_progress')
-                    ->requiresConfirmation(),
+                Tables\Actions\Action::make('stages')
+                    ->label('المراحل')
+                    ->icon('heroicon-o-list-bullet')
+                    ->url(fn (Task $record): string => route('filament.admin.resources.my-tasks.stages', $record))
+                    ->visible(fn () => auth()->user()?->hasRole('admin')),
                 
                 Tables\Actions\Action::make('complete')
                     ->label('إنهاء المهمة')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->action(fn (Task $record) => $record->update(['task_status' => 'completed', 'completed_at' => now()]))
-                    ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->task_status === 'in_progress')
+                    ->action(fn (Task $record) => app(\App\Services\TaskService::class)->completeTaskByLeader($record))
+                    ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->status !== 'completed')
                     ->requiresConfirmation(),
                 
                 Tables\Actions\Action::make('reward')
                     ->label('تسليم المكافأة')
                     ->icon('heroicon-o-gift')
-                    ->color('success')
-                    ->action(function (Task $record) {
+                    ->color('warning')
+                    ->form([
+                        Forms\Components\TextInput::make('amount')
+                            ->label('المبلغ')
+                            ->numeric()
+                            ->default(fn (Task $record) => $record->reward_amount)
+                            ->required(),
+                        Forms\Components\Textarea::make('notes')
+                            ->label('ملاحظات'),
+                    ])
+                    ->action(function (array $data, Task $record) {
                         \App\Models\Reward::create([
                             'task_id' => $record->id,
                             'giver_id' => auth()->id(),
                             'receiver_id' => $record->receiver_id,
-                            'amount' => $record->reward_amount,
-                            'notes' => 'تم تسليم المكافأة مباشرة',
-                            'status' => 'completed',
+                            'amount' => $data['amount'],
+                            'notes' => $data['notes'],
+                            'status' => 'pending',
                         ]);
                     })
-                    ->requiresConfirmation()
-                    ->modalHeading('تأكيد تسليم المكافأة')
-                    ->modalDescription(fn (Task $record) => "هل تريد تسليم مكافأة {$record->reward_amount} ريال لـ {$record->receiver->name}؟")
-                    ->modalSubmitActionLabel('نعم، سلم المكافأة')
-                    ->visible(function (Task $record) {
-                        return $record->creator_id === auth()->id() && 
-                               $record->task_status === 'completed' &&
-                               !\App\Models\Reward::where('task_id', $record->id)->exists();
-                    }),
-                
-                Tables\Actions\Action::make('view_stages')
-                    ->label('عرض المراحل')
-                    ->icon('heroicon-o-list-bullet')
-                    ->color('info')
-                    ->url(fn (Task $record): string => route('filament.admin.resources.my-tasks.stages', $record)),
+                    ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->status === 'completed'),
                 
                 Tables\Actions\ViewAction::make(),
             ])

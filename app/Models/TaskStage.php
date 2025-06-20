@@ -22,6 +22,17 @@ class TaskStage extends Model implements HasMedia
         'stage_number' => 'integer',
     ];
 
+    // تحسين الأداء بإضافة الفهارس
+    protected static function boot()
+    {
+        parent::boot();
+        
+        // ترتيب المراحل افتراضياً حسب رقم المرحلة
+        static::addGlobalScope('ordered', function ($query) {
+            $query->orderBy('stage_number', 'asc');
+        });
+    }
+
     public function task(): BelongsTo
     {
         return $this->belongsTo(Task::class);
@@ -29,10 +40,10 @@ class TaskStage extends Model implements HasMedia
     
     public function markAsCompleted()
     {
-        $this->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-        ]);
+        // استخدام معاملة واحدة لتحديث المرحلة
+        $this->status = 'completed';
+        $this->completed_at = now();
+        $this->save();
         
         // تحديث تقدم المهمة تلقائياً
         $this->task->updateProgress();

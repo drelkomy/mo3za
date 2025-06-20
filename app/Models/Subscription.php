@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Builder;
 
 class Subscription extends Model
 {
@@ -31,6 +32,21 @@ class Subscription extends Model
         'previous_rewards_amount' => 'decimal:2',
     ];
 
+    // تحسين الأداء بإضافة العلاقات المستخدمة بشكل متكرر
+    protected $with = ['package'];
+
+    // إضافة نطاق للاشتراكات النشطة لتحسين الاستعلامات المتكررة
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', 'active');
+    }
+
+    // إضافة نطاق للاشتراكات المنتهية لتحسين الاستعلامات المتكررة
+    public function scopeExpired(Builder $query): Builder
+    {
+        return $query->where('status', '!=', 'active');
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -48,11 +64,49 @@ class Subscription extends Model
     
     public function canCreateTask(): bool
     {
+        // تحسين الأداء بتجنب الاستعلامات
         return $this->status === 'active' && $this->tasks_created < $this->max_tasks;
     }
     
     public function canAddParticipant(): bool
     {
+        // تحسين الأداء بتجنب الاستعلامات
         return $this->status === 'active' && $this->participants_created < $this->max_participants;
+    }
+
+    public function incrementTasksCreated(): bool
+    {
+        if ($this->canCreateTask()) {
+            // استخدام increment بدلاً من update لتحسين الأداء
+            return $this->increment('tasks_created') ? true : false;
+        }
+        return false;
+    }
+
+    public function incrementParticipantsCreated(): bool
+    {
+        if ($this->canAddParticipant()) {
+            // استخدام increment بدلاً من update لتحسين الأداء
+            return $this->increment('participants_created') ? true : false;
+        }
+        return false;
+    }
+
+    public function isExpired(): bool
+    {
+        // تحسين الأداء بتجنب الاستعلامات
+        if ($this->status !== 'active') {
+            return true;
+        }
+        
+        if ($this->tasks_created >= $this->max_tasks) {
+            return true;
+        }
+        
+        if ($this->participants_created >= $this->max_participants) {
+            return true;
+        }
+        
+        return false;
     }
 }

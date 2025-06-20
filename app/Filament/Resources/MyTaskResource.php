@@ -19,12 +19,17 @@ class MyTaskResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->check() && !auth()->user()?->hasRole('admin');
+        return auth()->check();
     }
     
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function canView(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->check();
     }
     
     public static function shouldRegisterNavigation(): bool
@@ -34,7 +39,13 @@ class MyTaskResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('receiver_id', auth()->id());
+        $query = parent::getEloquentQuery();
+        
+        if (auth()->user()?->hasRole('admin')) {
+            return $query; // الأدمن يرى جميع المهام
+        }
+        
+        return $query->where('receiver_id', auth()->id());
     }
 
     public static function table(Table $table): Table
@@ -50,20 +61,14 @@ class MyTaskResource extends Resource
                     ->color(fn ($state) => $state == 100 ? 'success' : ($state > 0 ? 'warning' : 'gray')),
                 Tables\Columns\TextColumn::make('status')->label('الحالة')->badge(),
                 Tables\Columns\TextColumn::make('due_date')->label('تاريخ الاستحقاق')->date(),
-                Tables\Columns\TextColumn::make('stages_count')
-                    ->label('عدد المراحل')
-                    ->counts('stages')
-                    ->badge()
-                    ->color('info'),
                 Tables\Columns\TextColumn::make('reward_amount')->label('المكافأة')->money('SAR'),
             ])
             ->actions([
                 Tables\Actions\Action::make('stages')
-                    ->label('عرض المراحل')
+                    ->label('المراحل')
                     ->icon('heroicon-o-list-bullet')
-                    ->color('primary')
-                    ->url(fn (Task $record): string => route('filament.admin.resources.my-tasks.stages', $record))
-                    ->openUrlInNewTab(false),
+                    ->url(fn (Task $record): string => route('filament.admin.resources.my-tasks.stages', $record)),
+                Tables\Actions\ViewAction::make(),
             ]);
     }
 

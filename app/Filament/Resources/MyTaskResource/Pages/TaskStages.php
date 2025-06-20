@@ -6,12 +6,12 @@ use App\Filament\Resources\MyTaskResource;
 use App\Models\Task;
 use Filament\Actions;
 use Filament\Forms;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Infolists;
 
 class TaskStages extends Page implements HasTable
 {
@@ -25,11 +25,11 @@ class TaskStages extends Page implements HasTable
     public function mount(Task $record): void
     {
         $this->record = $record;
-        
-        // التأكد من أن المستخدم هو المستلم أو منشئ المهمة
-        if ($record->receiver_id !== auth()->id() && $record->creator_id !== auth()->id()) {
-            abort(403);
-        }
+    }
+
+    public static function canAccess(array $parameters = []): bool
+    {
+        return auth()->check();
     }
 
     public function table(Table $table): Table
@@ -62,81 +62,11 @@ class TaskStages extends Page implements HasTable
                 
                 Tables\Columns\TextColumn::make('completed_at')
                     ->label('تاريخ الإكمال')
-                    ->dateTime('d/m/Y H:i')
-                    ->timezone('Asia/Riyadh'),
+                    ->dateTime(),
                 
-                Tables\Columns\TextColumn::make('attachments')
-                    ->label('المرفقات')
-                    ->formatStateUsing(function ($state, $record) {
-                        if (empty($state)) {
-                            return '<span class="text-gray-500">لا يوجد</span>';
-                        }
-                        
-                        $files = explode(',', $state);
-                        $links = [];
-                        
-                        foreach ($files as $file) {
-                            $fileName = basename($file);
-                            $downloadUrl = url('/download-attachment/' . urlencode($file));
-                            $links[] = '<a href="' . $downloadUrl . '" class="inline-flex items-center px-2 py-1 text-xs font-medium text-white bg-primary-600 rounded hover:bg-primary-700" target="_blank">تحميل ' . $fileName . '</a>';
-                        }
-                        
-                        return '<div class="space-y-1">' . implode('', $links) . '</div>';
-                    })
-                    ->html(),
-            ])
-            ->actions([
-                Tables\Actions\Action::make('complete')
-                    ->label('تم الإنجاز')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->form([
-                        Forms\Components\FileUpload::make('attachments')
-                            ->label('مرفقات (اختياري)')
-                            ->multiple()
-                            ->acceptedFileTypes(['image/*', 'application/pdf'])
-                            ->maxSize(5120)
-                            ->disk('public')
-                            ->directory('task-attachments')
-                            ->helperText('يمكنك رفع صور أو ملفات PDF'),
-                    ])
-                    ->action(function (array $data, $record) {
-                        $record->markAsCompleted();
-                        
-                        // حفظ مسارات المرفقات
-                        if (!empty($data['attachments'])) {
-                            $attachmentPaths = [];
-                            foreach ($data['attachments'] as $attachment) {
-                                // المسار محفوظ في task-attachments بالفعل
-                                $attachmentPaths[] = $attachment;
-                            }
-                            $record->update(['attachments' => implode(',', $attachmentPaths)]);
-                        }
-                    })
-                    ->visible(fn ($record) => $record->status === 'pending' && $record->task->receiver_id === auth()->id()),
-                
-                Tables\Actions\Action::make('download')
-                    ->label('تحميل')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
-                    ->url(function ($record) {
-                        if (empty($record->attachments)) {
-                            return null;
-                        }
-                        $files = explode(',', $record->attachments);
-                        return route('download.attachment', ['path' => $files[0]]);
-                    })
-                    ->openUrlInNewTab()
-                    ->visible(function ($record) {
-                        $hasAttachments = !empty($record->attachments);
-                        $isCreator = $record->task->creator_id === auth()->id();
-                        $isReceiver = $record->task->receiver_id === auth()->id();
-                        
-                        // Debug: إظهار الزر دائماً للاختبار
-                        return $hasAttachments && ($isCreator || $isReceiver);
-                    }),
-                
-
+                Tables\Columns\TextColumn::make('proof_notes')
+                    ->label('ملاحظات الإثبات')
+                    ->limit(50),
             ])
             ->defaultSort('stage_number');
     }

@@ -34,6 +34,9 @@ class Task extends Model implements HasMedia
         'selected_participants' => 'array',
     ];
 
+    // تحسين الأداء بإضافة العلاقات التي يتم استخدامها بشكل متكرر
+    protected $with = ['creator', 'receiver'];
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'creator_id');
@@ -51,7 +54,7 @@ class Task extends Model implements HasMedia
 
     public function stages(): HasMany
     {
-        return $this->hasMany(TaskStage::class);
+        return $this->hasMany(TaskStage::class)->orderBy('stage_number');
     }
 
     public function rewards(): HasMany
@@ -86,44 +89,58 @@ class Task extends Model implements HasMedia
     public function createStages()
     {
         if ($this->total_stages > 0) {
+            $stages = [];
             for ($i = 1; $i <= $this->total_stages; $i++) {
-                \App\Models\TaskStage::create([
+                $stages[] = [
                     'task_id' => $this->id,
                     'stage_number' => $i,
                     'title' => "المرحلة {$i}",
-                    'status' => 'pending'
-                ]);
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
             }
+            // استخدام insert بدلاً من create لتحسين الأداء
+            TaskStage::insert($stages);
         }
     }
     
     public function createMultipleTasks()
     {
         if ($this->selected_participants) {
+            $tasks = [];
             foreach ($this->selected_participants as $participantId) {
-                $newTask = $this->replicate();
-                $newTask->is_multiple = false;
-                $newTask->receiver_id = $participantId;
-                $newTask->selected_participants = null;
-                $newTask->save();
+                $newTask = $this->replicate()->fill([
+                    'is_multiple' => false,
+                    'receiver_id' => $participantId,
+                    'selected_participants' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ])->toArray();
+                $tasks[] = $newTask;
+            }
+            // استخدام insert بدلاً من save لتحسين الأداء
+            if (!empty($tasks)) {
+                self::insert($tasks);
             }
         }
     }
     
     public function updateProgress()
     {
-        $totalStages = $this->stages()->count();
+        $totalStages = $this->total_stages;
         if ($totalStages === 0) {
             $this->update(['progress' => 0]);
             return;
         }
         
+        // استخدام cache للاستعلامات المتكررة
         $completedStages = $this->stages()->where('status', 'completed')->count();
         $progress = round(($completedStages / $totalStages) * 100);
         
         $this->update([
             'progress' => $progress,
-            'status' => $progress === 100 ? 'completed' : 'in_progress'
+            'status' => $progress === 100 ? 'completed' : ($progress > 0 ? 'in_progress' : 'pending')
         ]);
     }
 }

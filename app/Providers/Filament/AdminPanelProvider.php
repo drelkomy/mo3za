@@ -81,6 +81,7 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
             ])
             ->authGuard('web')
+            ->loginRouteSlug('login')
             ->brandName('نظام إدارة المعزز')
             ->maxContentWidth('full')
             ->sidebarCollapsibleOnDesktop()
@@ -94,6 +95,7 @@ class AdminPanelProvider extends PanelProvider
             ->plugin(
                 BreezyCore::make()
                     ->myProfile()
+                    ->avatarUploadComponent(fn($fileUpload) => $fileUpload->disk('public')->directory('avatars'))
             );
     }
 }

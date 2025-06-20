@@ -4,145 +4,106 @@ namespace App\Http\Controllers;
 
 use App\Models\Invitation;
 use App\Models\User;
-use App\Models\Team;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\TeamInvitation;
 use Illuminate\Support\Facades\Auth;
 
 class InvitationController extends Controller
 {
-    /**
-     * إنشاء دعوة جديدة
-     */
     public function create(Request $request)
     {
         $request->validate([
             'email' => 'required|email',
-            'name' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:20',
-            'message' => 'nullable|string',
+            'team_id' => 'required|exists:teams,id',
         ]);
 
-        // التحقق من وجود المستخدم
-        $existingUser = User::where('email', $request->email)->first();
-
-        // إنشاء الدعوة
-        $invitation = Invitation::create([
-            'sender_id' => Auth::id(),
-            'email' => $request->email,
-            'name' => $request->name,
-            'phone' => $request->phone,
-            'token' => Str::random(32),
-            'team_invitation' => true,
-            'message' => $request->message,
-            'expires_at' => now()->addDays(7),
-        ]);
-
-        // إرسال البريد الإلكتروني
-        try {
-            Mail::to($request->email)->send(new TeamInvitation($invitation));
-        } catch (\Exception $e) {
-            // تسجيل الخطأ
+        // التحقق من أن المستخدم هو مالك الفريق
+        $team = \App\Models\Team::findOrFail($request->team_id);
+        if ($team->owner_id !== Auth::id()) {
+            return response()->json(['message' => 'غير مصرح لك بإرسال دعوات لهذا الفريق'], 403);
         }
 
-        return redirect()->back()->with('success', 'تم إرسال الدعوة بنجاح');
-    }
-
-    /**
-     * عرض صفحة قبول الدعوة
-     */
-    public function show($token)
-    {
-        $invitation = Invitation::where('token', $token)
+        // التحقق من عدم وجود دعوة سابقة
+        $existingInvitation = Invitation::where('team_id', $request->team_id)
+            ->where('email', $request->email)
             ->where('status', 'pending')
             ->first();
 
-        if (!$invitation || $invitation->isExpired()) {
-            return redirect()->route('login')->with('error', 'الدعوة غير صالحة أو منتهية الصلاحية');
+        if ($existingInvitation) {
+            return response()->json(['message' => 'تم إرسال دعوة لهذا البريد الإلكتروني مسبقاً'], 422);
         }
 
-        return view('invitations.accept', compact('invitation'));
+        // إنشاء وإرسال الدعوة
+        $invitation = Invitation::createAndSend(
+            $request->team_id,
+            Auth::id(),
+            $request->email
+        );
+
+        return response()->json([
+            'message' => 'تم إرسال الدعوة بنجاح',
+            'invitation' => $invitation
+        ]);
     }
 
-    /**
-     * قبول الدعوة
-     */
-    public function accept(Request $request, $token)
+    public function show(string $token)
     {
-        $invitation = Invitation::where('token', $token)
-            ->where('status', 'pending')
-            ->first();
-
-        if (!$invitation || $invitation->isExpired()) {
-            return redirect()->route('login')->with('error', 'الدعوة غير صالحة أو منتهية الصلاحية');
+        $invitation = Invitation::where('token', $token)->firstOrFail();
+        
+        if ($invitation->status !== 'pending') {
+            return view('invitations.expired', ['invitation' => $invitation]);
         }
+        
+        return view('invitations.show', ['invitation' => $invitation]);
+    }
 
+    public function accept(Request $request, string $token)
+    {
+        $invitation = Invitation::where('token', $token)->firstOrFail();
+        
+        if ($invitation->status !== 'pending') {
+            return redirect()->route('invitations.show', $token)
+                ->with('error', 'هذه الدعوة غير صالحة أو تم استخدامها مسبقاً');
+        }
+        
         // التحقق من وجود المستخدم
         $user = User::where('email', $invitation->email)->first();
-
+        
         if (!$user) {
-            // إنشاء مستخدم جديد
-            $request->validate([
-                'name' => 'required|string|max:255',
-                'password' => 'required|string|min:8|confirmed',
-            ]);
-
-            $user = User::create([
-                'name' => $request->name ?? $invitation->name,
-                'email' => $invitation->email,
-                'password' => Hash::make($request->password),
-                'phone' => $invitation->phone,
-            ]);
-
-            $user->assignRole('مستخدم');
+            // إنشاء حساب جديد
+            return redirect('/admin/register')
+                ->with('invitation_token', $token)
+                ->with('email', $invitation->email);
         }
-
-        // إضافة المستخدم إلى فريق المرسل
-        $sender = $invitation->sender;
         
-        // التحقق من وجود فريق للمرسل، وإنشاء واحد إذا لم يكن موجوداً
-        $team = Team::where('owner_id', $sender->id)->first();
+        // إضافة المستخدم للفريق
+        $invitation->team->addMember($user->id);
+        $invitation->accept();
         
-        if (!$team) {
-            $team = Team::create([
-                'owner_id' => $sender->id,
-                'name' => 'فريق ' . $sender->name,
-            ]);
-        }
-
-        // إضافة المستخدم إلى الفريق إذا لم يكن موجوداً بالفعل
-        if (!$team->members()->where('user_id', $user->id)->exists()) {
-            $team->members()->attach($user->id);
-        }
-
-        // تحديث حالة الدعوة
-        $invitation->update(['status' => 'accepted']);
-
-        // تسجيل الدخول للمستخدم
-        Auth::login($user);
-
-        return redirect()->route('dashboard')->with('success', 'تم قبول الدعوة بنجاح');
+        return redirect('/admin')
+            ->with('success', 'تم قبول الدعوة بنجاح!');
     }
 
-    /**
-     * رفض الدعوة
-     */
-    public function reject($token)
+    public function reject(string $token)
     {
-        $invitation = Invitation::where('token', $token)
-            ->where('status', 'pending')
-            ->first();
-
-        if (!$invitation || $invitation->isExpired()) {
-            return redirect()->route('login')->with('error', 'الدعوة غير صالحة أو منتهية الصلاحية');
+        $invitation = Invitation::where('token', $token)->firstOrFail();
+        
+        if ($invitation->status === 'pending') {
+            $invitation->reject();
         }
+        
+        return redirect('/admin')
+            ->with('info', 'تم رفض الدعوة');
+    }
 
-        // تحديث حالة الدعوة
-        $invitation->update(['status' => 'rejected']);
-
-        return redirect()->route('login')->with('success', 'تم رفض الدعوة');
+    // اختبار إرسال الدعوة بدون طابور (للاختبار فقط)
+    public function testSendWithoutQueue(int $invitationId)
+    {
+        $invitation = Invitation::findOrFail($invitationId);
+        $invitation->sendWithoutQueue();
+        
+        return response()->json([
+            'message' => 'تم إرسال الدعوة مباشرة بدون طابور',
+            'invitation' => $invitation
+        ]);
     }
 }

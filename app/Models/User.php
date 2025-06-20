@@ -48,6 +48,11 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return true;
     }
 
+    public function getFilamentAvatarUrl(): ?string
+    {
+        return $this->avatar_url ? url('storage/' . $this->avatar_url) : null;
+    }
+
     public function ownedTeams(): HasMany
     {
         return $this->hasMany(Team::class, 'owner_id');
@@ -100,14 +105,19 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return $this->hasMany(Invitation::class, 'sender_id');
     }
 
+    protected $activeSubscriptionCache = null;
+
     public function activeSubscription()
     {
-        return $this->subscriptions()->where('status', 'active')->latest()->first();
+        if ($this->activeSubscriptionCache === null) {
+            $this->activeSubscriptionCache = $this->subscriptions()->where('status', 'active')->latest()->first();
+        }
+        return $this->activeSubscriptionCache;
     }
     
     public function hasActiveSubscription(): bool
     {
-        return $this->subscriptions()->where('status', 'active')->exists();
+        return $this->activeSubscription() !== null;
     }
 
     public function canAddTasks(): bool
