@@ -2,113 +2,69 @@
 
 namespace App\Services;
 
-use App\Models\User;
-use App\Models\Task;
-use App\Models\Team;
+use App\Models\Package;
 use App\Models\Subscription;
-use Illuminate\Support\Facades\Log;
+use App\Models\User;
 
 class SubscriptionService
 {
-    /**
-     * Check if user can create a new task
-     * التحقق من إمكانية إنشاء مهمة جديدة
-     *
-     * @param User $user
-     * @return bool
-     */
-    public function canCreateTask(User $user): bool
+    public function createTrialSubscription(User $user): ?Subscription
     {
-        return $user->canAddTasks();
+        $trialPackage = Package::where('name', 'الباقة التجريبية')->first();
+        
+        if (!$trialPackage) {
+            return null;
+        }
+
+        return Subscription::create([
+            'user_id' => $user->id,
+            'package_id' => $trialPackage->id,
+            'status' => 'active',
+            'price_paid' => 0,
+            'max_tasks' => $trialPackage->max_tasks,
+            'max_participants' => $trialPackage->max_participants,
+            'max_milestones_per_task' => $trialPackage->max_milestones_per_task,
+            'tasks_created' => 0,
+            'participants_created' => 0,
+            'previous_tasks_completed' => 0,
+            'previous_tasks_pending' => 0,
+            'previous_rewards_amount' => 0,
+        ]);
     }
-    
-    /**
-     * Check if user can add a team member
-     * التحقق من إمكانية إضافة عضو للفريق
-     *
-     * @param User $user
-     * @return bool
-     */
-    public function canAddTeamMember(User $user): bool
-    {
-        return $user->canAddParticipants();
-    }
-    
-    /**
-     * Check if user can add milestones to a task
-     * التحقق من إمكانية إضافة مراحل للمهمة
-     *
-     * @param User $user
-     * @param Task $task
-     * @return bool
-     */
-    public function canAddMilestones(User $user, Task $task): bool
+
+    public function canAddTasks(User $user): bool
     {
         $subscription = $user->activeSubscription();
-        if (!$subscription) {
-            return false;
-        }
-        
-        // التحقق من عدد المراحل الحالية للمهمة
-        $currentMilestones = $task->stages()->count();
-        return $currentMilestones < $subscription->max_milestones_per_task;
+        return $subscription && 
+               $subscription->status === 'active' && 
+               $subscription->tasks_created < $subscription->max_tasks;
     }
-    
-    /**
-     * Process task creation and update subscription counters
-     * معالجة إنشاء مهمة جديدة وتحديث عدادات الاشتراك
-     *
-     * @param User $user
-     * @param Task $task
-     * @return bool
-     */
-    public function processTaskCreation(User $user, Task $task): bool
+
+    public function canAddParticipants(User $user): bool
     {
-        if (!$this->canCreateTask($user)) {
-            return false;
-        }
-        
-        // زيادة عداد المهام المنشأة
-        $result = $user->incrementTasksCreated();
-        
-        if ($result) {
-            Log::info('Task created and subscription counter updated', [
-                'user_id' => $user->id,
-                'task_id' => $task->id,
-                'subscription_id' => $user->activeSubscription()->id ?? null
-            ]);
-        }
-        
-        return $result;
+        $subscription = $user->activeSubscription();
+        return $subscription && 
+               $subscription->status === 'active' && 
+               $subscription->participants_created < $subscription->max_participants;
     }
-    
-    /**
-     * Process team member addition and update subscription counters
-     * معالجة إضافة عضو للفريق وتحديث عدادات الاشتراك
-     *
-     * @param User $user
-     * @param Team $team
-     * @param User $member
-     * @return bool
-     */
-    public function processTeamMemberAddition(User $user, Team $team, User $member): bool
+
+    public function incrementTasksCreated(User $user): bool
     {
-        if (!$this->canAddTeamMember($user)) {
-            return false;
+        $subscription = $user->activeSubscription();
+        if ($this->canAddTasks($user)) {
+            $subscription->increment('tasks_created');
+            return true;
         }
-        
-        // زيادة عداد المشاركين المنشأين
-        $result = $user->incrementParticipantsCreated();
-        
-        if ($result) {
-            Log::info('Team member added and subscription counter updated', [
-                'user_id' => $user->id,
-                'team_id' => $team->id,
-                'member_id' => $member->id,
-                'subscription_id' => $user->activeSubscription()->id ?? null
-            ]);
+        return false;
+    }
+
+    public function incrementParticipantsCreated(User $user): bool
+    {
+        $subscription = $user->activeSubscription();
+        if ($this->canAddParticipants($user)) {
+            $subscription->increment('participants_created');
+            return true;
         }
-        
-        return $result;
+        return false;
     }
 }

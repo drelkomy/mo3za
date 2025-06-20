@@ -169,16 +169,11 @@ class PaymentController extends Controller
                         ]);
 
                         if ($subscription) {
-                            // تفعيل المستخدم والمشاركين
+                            // تفعيل المستخدم فقط - أعضاء الفريق يظلون نشطين مستقلين
                             if ($payment->user) {
                                 $payment->user->update(['is_active' => true]);
                                 
-                                // تفعيل المشاركين المرتبطين بالمستخدم
-                                if (method_exists($payment->user, 'participants')) {
-                                    $payment->user->participants()->update(['is_active' => true]);
-                                }
-                                
-                                Log::info('User and participants activated', [
+                                Log::info('User activated - team members remain active independently', [
                                     'user_id' => $payment->user->id
                                 ]);
                             }
@@ -312,14 +307,9 @@ class PaymentController extends Controller
                             $subscription = $this->createSubscriptionFromPayment($payment);
                             
                             if ($subscription) {
-                                // تفعيل المستخدم والمشاركين
+                                // تفعيل المستخدم فقط - أعضاء الفريق يظلون نشطين
                                 if ($payment->user) {
                                     $payment->user->update(['is_active' => true]);
-                                    
-                                    // تفعيل المشاركين المرتبطين بالمستخدم
-                                    if (method_exists($payment->user, 'participants')) {
-                                        $payment->user->participants()->update(['is_active' => true]);
-                                    }
                                 }
                                 
                                 return redirect()->route('paytabs.activate', ['transaction_ref' => $transactionRef]);
@@ -398,11 +388,11 @@ class PaymentController extends Controller
         $user = auth()->user();
 
         if (!$user) {
-            return redirect()->route('login')->with('error', 'Please login to subscribe');
+            return redirect()->route('login')->with('error', 'يرجى تسجيل الدخول للاشتراك');
         }
 
         if ($user->hasActiveSubscription()) {
-            return redirect()->back()->with('error', 'You already have an active subscription');
+            return redirect()->back()->with('error', 'لديك اشتراك نشط بالفعل');
         }
 
         // Create payment record
@@ -415,8 +405,8 @@ class PaymentController extends Controller
             'customer_name' => $user->name,
             'customer_email' => $user->email,
             'customer_phone' => $user->phone ?? null,
-            'description' => "Subscription to package: {$package->name}",
-            'notes' => "Package subscription initiated from packages widget",
+            'description' => "اشتراك في الباقة: {$package->name}",
+            'notes' => "تم بدء الاشتراك من ويدجت الباقات",
             'status' => 'pending',
         ]);
 
@@ -451,7 +441,7 @@ class PaymentController extends Controller
                 'notes' => $payment->notes . PHP_EOL . $e->getMessage()
             ]);
 
-            return redirect()->back()->with('error', 'Failed to process payment: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'فشل في معالجة الدفع: ' . $e->getMessage());
         }
     }
 
@@ -461,7 +451,7 @@ class PaymentController extends Controller
     public function failed(Request $request)
     {
         $transactionRef = $request->get('tranRef');
-        $reason = $request->get('reason', 'Payment failed');
+        $reason = $request->get('reason', 'فشل في الدفع');
         
         return view('payment.failed', compact('transactionRef', 'reason'));
     }
@@ -552,10 +542,10 @@ class PaymentController extends Controller
                 return null;
             }
 
-            // تعيين تاريخ البداية فقط، لأن الاشتراك ينتهي بانتهاء عدد المهام والمشاركين وليس بالوقت
+            // تعيين تاريخ البداية - العضو يظل نشط حتى مع انتهاء الاشتراك
             $startDate = now();
 
-            // إنشاء الاشتراك بدون تاريخ انتهاء لأن الاشتراك ينتهي بانتهاء عدد المهام والمشاركين
+            // إنشاء الاشتراك - انتهاء الاشتراك لا يؤثر على أعضاء الفريق
             $subscription = new \App\Models\Subscription([
                 'user_id' => $payment->user_id,
                 'package_id' => $package->id,
@@ -568,7 +558,7 @@ class PaymentController extends Controller
                 'max_participants' => $package->max_participants,
                 'max_milestones_per_task' => $package->max_milestones_per_task,
                 'start_date' => $startDate,
-                'end_date' => null, // لا يوجد تاريخ انتهاء محدد
+                'end_date' => $startDate->copy()->addYear(), // اشتراك لمدة عام - انتهاء الاشتراك لا يؤثر على أعضاء الفريق
             ]);
 
             $subscription->save();

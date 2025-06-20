@@ -13,7 +13,17 @@ class EditTeam extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\ViewAction::make(),
         ];
+    }
+
+    public function mount(int | string $record): void
+    {
+        parent::mount($record);
+        
+        // التأكد من أن المستخدم هو مالك الفريق
+        if ($this->record->owner_id !== auth()->id() && !auth()->user()->hasRole('admin')) {
+            abort(403);
+        }
     }
 }

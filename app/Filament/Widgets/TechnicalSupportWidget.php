@@ -9,11 +9,17 @@ class TechnicalSupportWidget extends Widget
 {
     protected static string $view = 'filament.widgets.technical-support-widget';
     protected int | string | array $columnSpan = 'full';
+    protected static ?int $sort = 99;
 
     public ?FinancialDetail $financialData;
 
     public function mount(): void
     {
         $this->financialData = FinancialDetail::latest()->first();
+    }
+
+    public static function canView(): bool
+    {
+        return auth()->check();
     }
 }

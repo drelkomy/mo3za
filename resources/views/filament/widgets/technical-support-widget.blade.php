@@ -1,25 +1,21 @@
 <div class="p-4 bg-white rounded shadow">
-    <h2 class="text-lg font-bold mb-2">بيانات التحويل البنكي</h2>
+    <h2 class="text-lg font-bold mb-4">بيانات الدعم الفني</h2>
     @if(isset($financialData))
         <div class="mb-2">
-            <span class="font-semibold">اسم البنك:</span>
-            <span>{{ $financialData->bank_name ?? '-' }}</span>
+            <span class="font-semibold">رقم الواتساب:</span>
+            <span>{{ $financialData->whatsapp_number ?? '-' }}</span>
         </div>
         <div class="mb-2">
-            <span class="font-semibold">رقم الحساب:</span>
-            <span>{{ $financialData->account_number ?? '-' }}</span>
+            <span class="font-semibold">رقم الهاتف:</span>
+            <span>{{ $financialData->phone_number ?? '-' }}</span>
         </div>
         <div class="mb-2">
-            <span class="font-semibold">اسم صاحب الحساب:</span>
-            <span>{{ $financialData->account_name ?? '-' }}</span>
+            <span class="font-semibold">البريد الإلكتروني:</span>
+            <span>{{ $financialData->email ?? '-' }}</span>
         </div>
         <div class="mb-2">
-            <span class="font-semibold">الآيبان:</span>
-            <span>{{ $financialData->iban ?? '-' }}</span>
-        </div>
-        <div class="mb-2">
-            <span class="font-semibold">ملاحظات:</span>
-            <span>{{ $financialData->notes ?? '-' }}</span>
+            <span class="font-semibold">تفاصيل الحساب البنكي:</span>
+            <span>{{ $financialData->bank_account_details ?? '-' }}</span>
         </div>
     @else
         <div class="text-danger">لا توجد بيانات مالية متاحة حالياً.</div>

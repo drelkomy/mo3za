@@ -14,6 +14,14 @@ class PackageSeeder extends Seeder
     {
         $packages = [
             [
+                'name' => 'الباقة التجريبية',
+                'price' => 0,
+                'max_tasks' => 3,
+                'max_participants' => 2,
+                'max_milestones_per_task' => 2,
+                'is_active' => true,
+            ],
+            [
                 'name' => 'الباقة الأساسية',
                 'price' => 99.99,
                 'max_tasks' => 10,
@@ -37,20 +45,10 @@ class PackageSeeder extends Seeder
                 'max_milestones_per_task' => 15,
                 'is_active' => true,
             ],
-            [
-                'name' => 'باقة تجريبية',
-                'price' => 0,
-                'is_trial' => true,
-                'max_participants' => 2,
-                'max_tasks' => 3,
-                'max_milestones_per_task' => 2,
-                'is_active' => true,
-        ],
-
         ];
 
         foreach ($packages as $package) {
-            Package::create($package);
+            Package::firstOrCreate(['name' => $package['name']], $package);
         }
     }
 }

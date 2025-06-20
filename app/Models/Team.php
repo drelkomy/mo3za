@@ -12,38 +12,15 @@ class Team extends Model
 {
     use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
-    protected $fillable = [
-        'owner_id',
-        'name',
-        'description',
-        'is_active',
-    ];
+    protected $fillable = ['owner_id', 'name', 'description', 'is_active'];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
-    protected $casts = [
-        'is_active' => 'boolean',
-    ];
+    protected $casts = ['is_active' => 'boolean'];
 
-    /**
-     * Get the owner of the team.
-     */
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
     }
 
-    /**
-     * Get the members of the team.
-     */
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'team_members')
@@ -51,17 +28,11 @@ class Team extends Model
             ->withTimestamps();
     }
 
-    /**
-     * Get the invitations for the team.
-     */
     public function invitations(): HasMany
     {
         return $this->hasMany(Invitation::class);
     }
 
-    /**
-     * Get the tasks for the team.
-     */
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);

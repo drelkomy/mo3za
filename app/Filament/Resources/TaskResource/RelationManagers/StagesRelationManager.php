@@ -42,19 +42,24 @@ class StagesRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('order')->label('الترتيب')->sortable(),
                 Tables\Columns\TextColumn::make('title')->label('العنوان')->searchable(),
+                Tables\Columns\TextColumn::make('stage_number')
+                    ->label('رقم المرحلة')
+                    ->sortable(),
                 Tables\Columns\BadgeColumn::make('status')
-                    ->label('حالة الداعم')
-                    ->colors(self::getStatusColors())
-                    ->formatStateUsing(fn (string $state): string => self::getStatusOptions()[$state] ?? $state),
-                Tables\Columns\BadgeColumn::make('participant_status')
-                    ->label('حالة المشارك')
-                    ->colors(self::getParticipantStatusColors())
-                    ->formatStateUsing(fn ($state): string => self::getParticipantStatusOptions()[$state] ?? 'لم يتم التحديث'),
-                Tables\Columns\TextColumn::make('proof_file')
-                    ->label('ملف الإثبات')
-                    ->formatStateUsing(fn ($state): string => $state ? 'تم الرفع' : 'لم يتم الرفع')
-                    ->url(fn ($record): ?string => $record->proof_file ? asset('storage/' . $record->proof_file) : null)
-                    ->openUrlInNewTab(),
+                    ->label('الحالة')
+                    ->colors([
+                        'gray' => 'pending',
+                        'success' => 'completed',
+                    ])
+                    ->formatStateUsing(fn (string $state): string => match($state) {
+                        'pending' => 'قيد الانتظار',
+                        'completed' => 'مكتملة',
+                        default => $state
+                    }),
+                Tables\Columns\TextColumn::make('completed_at')
+                    ->label('تاريخ الإنجاز')
+                    ->dateTime()
+                    ->placeholder('لم يكتمل بعد'),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()->visible(fn (): bool => $this->canManageStages()),
@@ -62,21 +67,21 @@ class StagesRelationManager extends RelationManager
             ->actions([
                 Tables\Actions\EditAction::make()->visible(fn (): bool => $this->canManageStages()),
                 Tables\Actions\DeleteAction::make()->visible(fn (): bool => $this->canManageStages()),
-                Tables\Actions\Action::make('update_participant_status')
-                    ->label('تحديث الحالة')
+                Tables\Actions\Action::make('mark_completed')
+                    ->label('تحديد كمكتملة')
                     ->icon('heroicon-o-check-circle')
-                    ->form([
-                        Forms\Components\Select::make('participant_status')
-                            ->label('الحالة')
-                            ->options(self::getParticipantStatusOptions())
-                            ->required(),
-                        Forms\Components\FileUpload::make('proof_file')
-                            ->label('ملف الإثبات')
-                            ->disk('public')
-                            ->directory('task-proofs'),
-                    ])
-                    ->action(fn (TaskStage $record, array $data) => $this->handleParticipantStatusUpdate($record, $data))
-                    ->visible(fn (): bool => auth()->user()->hasRole('مشارك')),
+                    ->color('success')
+                    ->action(function (TaskStage $record) {
+                        $record->update([
+                            'status' => 'completed',
+                            'completed_at' => now(),
+                        ]);
+                    })
+                    ->visible(fn (TaskStage $record): bool => 
+                        $record->task->receiver_id === auth()->id() && 
+                        $record->status === 'pending'
+                    )
+                    ->requiresConfirmation(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -86,62 +91,10 @@ class StagesRelationManager extends RelationManager
             ->reorderable('order');
     }
 
-    protected function handleParticipantStatusUpdate(TaskStage $record, array $data): void
-    {
-        $record->update([
-            'participant_status' => $data['participant_status'],
-            'proof_file' => $data['proof_file'] ?? $record->proof_file,
-        ]);
-
-        if ($data['participant_status'] === 'completed' && isset($data['proof_file'])) {
-            $record->update(['status' => 'submitted']);
-        }
-    }
-
     protected function canManageStages(): bool
     {
-        return auth()->user()->hasRole(['مدير نظام', 'داعم']);
-    }
-
-    protected static function getStatusOptions(): array
-    {
-        return [
-            'pending' => 'معلقة',
-            'submitted' => 'تم رفع الإثبات',
-            'approved' => 'تم التأكد',
-            'rejected' => 'مرفوضة',
-            'completed' => 'مكتملة',
-            'evaluated' => 'تم تقييمها',
-        ];
-    }
-
-    protected static function getStatusColors(): array
-    {
-        return [
-            'primary' => 'pending',
-            'warning' => 'submitted',
-            'success' => 'approved',
-            'danger' => 'rejected',
-            'info' => 'completed',
-            'secondary' => 'evaluated',
-        ];
-    }
-
-    protected static function getParticipantStatusOptions(): array
-    {
-        return [
-            'pending' => 'قيد التنفيذ',
-            'completed' => 'تم التنفيذ',
-            'not_completed' => 'لم يتم التنفيذ',
-        ];
-    }
-
-    protected static function getParticipantStatusColors(): array
-    {
-        return [
-            'gray' => 'pending',
-            'success' => 'completed',
-            'danger' => 'not_completed',
-        ];
+        $task = $this->ownerRecord;
+        return auth()->user()->hasRole('admin') || 
+               $task->creator_id === auth()->id();
     }
 }

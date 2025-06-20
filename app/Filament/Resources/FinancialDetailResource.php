@@ -17,23 +17,23 @@ class FinancialDetailResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-credit-card';
 
-    protected static ?string $navigationGroup = null;
+    protected static ?string $navigationGroup = null; // يظهر مباشرة في القائمة الرئيسية
 
     protected static ?int $navigationSort = 1;
 
     public static function getNavigationLabel(): string
     {
-        return 'البيانات العضولية';
+        return 'الدعم الفني';
     }
 
     public static function getModelLabel(): string
     {
-        return 'بيانات عضولية';
+        return 'دعم فني';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'البيانات العضولية';
+        return 'الدعم الفني';
     }
 
     public static function canViewAny(): bool
@@ -43,17 +43,15 @@ class FinancialDetailResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->hasRole('admin');
+        return false; // لا يمكن الإنشاء
     }
-
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
         return auth()->user()?->hasRole('admin');
     }
-
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        return auth()->user()?->hasRole('admin');
+        return false; // لا يمكن الحذف
     }
 
     public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
@@ -75,14 +73,8 @@ class FinancialDetailResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('البيانات العضولية')
+                Forms\Components\Section::make('بيانات الدعم الفني')
                     ->schema([
-                        Forms\Components\Select::make('user_id')
-                            ->label('العضو')
-                            ->relationship('user', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->required(),
                         Forms\Components\TextInput::make('whatsapp_number')
                             ->label('رقم الواتساب')
                             ->tel(),
@@ -101,50 +93,39 @@ class FinancialDetailResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // عرض نموذج التعديل مباشرة في الصفحة الرئيسية (inline form)
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
-                    ->label('المستخدم')
-                    ->searchable()
-                    ->sortable(),
                 Tables\Columns\TextColumn::make('whatsapp_number')
                     ->label('رقم الواتساب')
-                    ->searchable(),
+                    ->extraAttributes(['style' => 'font-weight:bold']),
                 Tables\Columns\TextColumn::make('phone_number')
-                    ->label('رقم الهاتف')
-                    ->searchable(),
+                    ->label('رقم الهاتف'),
                 Tables\Columns\TextColumn::make('email')
-                    ->label('البريد الإلكتروني')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('تاريخ الإنشاء')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-            ])
-            ->filters([
-                //
+                    ->label('البريد الإلكتروني'),
+                Tables\Columns\TextColumn::make('bank_account_details')
+                    ->label('تفاصيل الحساب البنكي'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->label('تعديل')
+                    ->slideOver()
             ])
-            ->bulkActions([
-                //
+            ->bulkActions([])
+            ->contentGrid([
+                'md' => 2,
+                'xl' => 2,
             ]);
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
+
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListFinancialDetails::route('/'),
             'edit' => Pages\EditFinancialDetail::route('/{record}/edit'),
+            // لا توجد صفحة إنشاء
         ];
     }
 }

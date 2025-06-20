@@ -17,8 +17,6 @@ class UserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationGroup = 'إدارة الأعضاء';
-
     protected static ?int $navigationSort = 1;
 
     public static function shouldRegisterNavigation(): bool
@@ -47,7 +45,12 @@ class UserResource extends Resource
             ->schema([
                 Forms\Components\Section::make('المعلومات الأساسية')
                     ->schema([
-                        Forms\Components\TextInput::make('name')
+                        Forms\Components\FileUpload::make('avatar_url')
+                    ->label('الصورة الشخصية')
+                    ->avatar()
+                    ->image()
+                    ->directory('avatars'),
+                Forms\Components\TextInput::make('name')
                             ->label('الاسم')
                             ->required()
                             ->maxLength(255),
@@ -68,13 +71,14 @@ class UserResource extends Resource
                             ->tel()
                             ->maxLength(255),
                         Forms\Components\Select::make('user_type')
-                            ->label('نوع العضو')
-                            ->options([
-                                'admin' => 'مدير',
-                                'member' => 'عضو',
-                            ])
-                            ->default('member')
-                            ->required(),
+                    ->label('نوع العضو')
+                    ->options([
+                        'admin' => 'مدير',
+                        'member' => 'عضو',
+                    ])
+                    ->default('member')
+                    ->required()
+                    ->native(false),
                         Forms\Components\Toggle::make('is_active')
                             ->label('نشط')
                             ->default(true),
@@ -90,10 +94,7 @@ class UserResource extends Resource
                             ]),
                         Forms\Components\DatePicker::make('birthdate')
                             ->label('تاريخ الميلاد'),
-                        Forms\Components\FileUpload::make('avatar_url')
-                            ->label('الصورة الشخصية')
-                            ->image()
-                            ->directory('avatars'),
+                       
                         Forms\Components\Select::make('area_id')
                             ->label('المنطقة')
                             ->relationship('area', 'name')
@@ -124,15 +125,21 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('phone')
                     ->label('رقم الهاتف')
                     ->searchable(),
-                Tables\Columns\SelectColumn::make('user_type')
-                    ->label('نوع العضو')
-                    ->options([
-                        'admin' => 'مدير',
-                        'member' => 'عضو',
-                    ]),
-                Tables\Columns\IconColumn::make('is_active')
+                Tables\Columns\BadgeColumn::make('user_type')
+                    ->label('نوع المستخدم')
+                    ->colors([
+                        'success' => 'admin',
+                        'info' => 'member',
+                    ])
+                    ->formatStateUsing(fn($state) => $state === 'admin' ? 'مدير' : 'عضو'),
+               
+                Tables\Columns\ToggleColumn::make('is_active')
                     ->label('نشط')
-                    ->boolean(),
+                    ->sortable()
+                    ->onIcon('heroicon-o-check-circle')
+                    ->offIcon('heroicon-o-x-circle')
+                    ->onColor('success')
+                    ->offColor('danger'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('تاريخ التسجيل')
                     ->dateTime()

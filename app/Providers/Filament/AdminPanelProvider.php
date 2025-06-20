@@ -28,8 +28,17 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->registration()
             ->font('cairo')
             ->topNavigation()
+            ->globalSearch(false)
+            ->userMenuItems([
+                'notifications' => \Filament\Navigation\MenuItem::make()
+                    ->label('الإشعارات')
+                    ->url(fn (): string => \App\Filament\Resources\NotificationResource::getUrl())
+                    ->icon('heroicon-o-bell')
+                    ->visible(fn (): bool => auth()->check() && !auth()->user()?->hasRole('admin')),
+            ])
             ->colors([
                 'primary' =>'#006E82',
             ])
@@ -37,8 +46,10 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Resources\UserResource::class,
                 \App\Filament\Resources\TeamResource::class,
                 \App\Filament\Resources\TaskResource::class,
-
                 \App\Filament\Resources\RewardResource::class,
+                \App\Filament\Resources\MyTaskResource::class,
+                \App\Filament\Resources\MyPersonalRewardResource::class,
+                \App\Filament\Resources\NotificationResource::class,
                 \App\Filament\Resources\PackageResource::class,
                 \App\Filament\Resources\SubscriptionResource::class,
                 \App\Filament\Resources\PaymentResource::class,
@@ -51,6 +62,9 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
+                \App\Filament\Widgets\PackageSubscriptionWidget::class,
+                \App\Filament\Widgets\SubscriptionStatusWidget::class,
+                \App\Filament\Widgets\TechnicalSupportWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -66,13 +80,15 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
+            ->authGuard('web')
             ->brandName('نظام إدارة المعزز')
             ->maxContentWidth('full')
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
                 'إدارة المستخدمين',
                 'إدارة الفرق',
-                'إدارة المهام',
+                'مهامي الشخصية',
+                'المحاسبة',
                 'الإعدادات',
             ])
             ->plugin(
