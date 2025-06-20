@@ -14,9 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-users';
-
     protected static ?int $navigationSort = 1;
 
     public static function shouldRegisterNavigation(): bool
@@ -46,11 +44,11 @@ class UserResource extends Resource
                 Forms\Components\Section::make('المعلومات الأساسية')
                     ->schema([
                         Forms\Components\FileUpload::make('avatar_url')
-                    ->label('الصورة الشخصية')
-                    ->avatar()
-                    ->image()
-                    ->directory('avatars'),
-                Forms\Components\TextInput::make('name')
+                            ->label('الصورة الشخصية')
+                            ->avatar()
+                            ->image()
+                            ->directory('avatars'),
+                        Forms\Components\TextInput::make('name')
                             ->label('الاسم')
                             ->required()
                             ->maxLength(255),
@@ -71,14 +69,14 @@ class UserResource extends Resource
                             ->tel()
                             ->maxLength(255),
                         Forms\Components\Select::make('user_type')
-                    ->label('نوع العضو')
-                    ->options([
-                        'admin' => 'مدير',
-                        'member' => 'عضو',
-                    ])
-                    ->default('member')
-                    ->required()
-                    ->native(false),
+                            ->label('نوع العضو')
+                            ->options([
+                                'admin' => 'مدير',
+                                'member' => 'عضو',
+                            ])
+                            ->default('member')
+                            ->required()
+                            ->native(false),
                         Forms\Components\Toggle::make('is_active')
                             ->label('نشط')
                             ->default(true),
@@ -94,17 +92,6 @@ class UserResource extends Resource
                             ]),
                         Forms\Components\DatePicker::make('birthdate')
                             ->label('تاريخ الميلاد'),
-                       
-                        Forms\Components\Select::make('area_id')
-                            ->label('المنطقة')
-                            ->relationship('area', 'name')
-                            ->searchable()
-                            ->preload(),
-                        Forms\Components\Select::make('city_id')
-                            ->label('المدينة')
-                            ->relationship('city', 'name')
-                            ->searchable()
-                            ->preload(),
                     ])->columns(2),
             ]);
     }
@@ -125,21 +112,19 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('phone')
                     ->label('رقم الهاتف')
                     ->searchable(),
-                Tables\Columns\BadgeColumn::make('user_type')
+                Tables\Columns\TextColumn::make('user_type')
                     ->label('نوع المستخدم')
-                    ->colors([
-                        'success' => 'admin',
-                        'info' => 'member',
-                    ])
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'admin' => 'success',
+                        'member' => 'info',
+                        default => 'gray',
+                    })
                     ->formatStateUsing(fn($state) => $state === 'admin' ? 'مدير' : 'عضو'),
                
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('نشط')
-                    ->sortable()
-                    ->onIcon('heroicon-o-check-circle')
-                    ->offIcon('heroicon-o-x-circle')
-                    ->onColor('success')
-                    ->offColor('danger'),
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('تاريخ التسجيل')
                     ->dateTime()
@@ -148,7 +133,6 @@ class UserResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('user_type')
-                    ->label('نوع العضو')
                     ->label('نوع المستخدم')
                     ->options([
                         'admin' => 'مدير',
@@ -168,38 +152,22 @@ class UserResource extends Resource
             ]);
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
-    }
-
     public static function canViewAny(): bool
     {
         return auth()->user()?->hasRole('admin');
     }
+
     public static function canCreate(): bool
     {
         return auth()->user()?->hasRole('admin');
     }
+
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
         return auth()->user()?->hasRole('admin');
     }
+
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    public static function canReplicate(\Illuminate\Database\Eloquent\Model $record): bool
     {
         return auth()->user()?->hasRole('admin');
     }
@@ -211,10 +179,5 @@ class UserResource extends Resource
             'create' => Pages\CreateUser::route('/create'),
             'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
-    }
-
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery();
     }
 }
