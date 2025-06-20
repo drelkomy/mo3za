@@ -17,15 +17,15 @@ use App\Http\Controllers\InvitationController;
 
 Route::get('/', fn () => redirect('/app'));
 
-Route::get('/download-attachment/{file}', function ($file) {
-    $filePath = storage_path('app/public/' . $file);
+Route::get('/download-attachment/{path}', function ($path) {
+    $filePath = storage_path('app/public/' . $path);
     
     if (!file_exists($filePath)) {
-        abort(404);
+        abort(404, 'File not found: ' . $path);
     }
     
     return response()->download($filePath);
-})->middleware('auth')->name('download.attachment');
+})->middleware('auth')->name('download.attachment')->where('path', '.*');
 
 // --------------------------
 // Payment Routes (UI-based)

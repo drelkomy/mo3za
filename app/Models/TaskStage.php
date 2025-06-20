@@ -14,7 +14,7 @@ class TaskStage extends Model implements HasMedia
 
     protected $fillable = [
         'task_id', 'stage_number', 'title', 'description', 
-        'status', 'completed_at', 'proof_notes'
+        'status', 'completed_at', 'proof_notes', 'attachments'
     ];
 
     protected $casts = [

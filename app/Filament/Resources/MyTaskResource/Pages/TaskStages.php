@@ -105,8 +105,12 @@ class TaskStages extends Page implements HasTable
                         
                         // حفظ مسارات المرفقات
                         if (!empty($data['attachments'])) {
-                            $attachmentPaths = implode(',', $data['attachments']);
-                            $record->update(['attachments' => $attachmentPaths]);
+                            $attachmentPaths = [];
+                            foreach ($data['attachments'] as $attachment) {
+                                // المسار محفوظ في task-attachments بالفعل
+                                $attachmentPaths[] = $attachment;
+                            }
+                            $record->update(['attachments' => implode(',', $attachmentPaths)]);
                         }
                     })
                     ->visible(fn ($record) => $record->status === 'pending' && $record->task->receiver_id === auth()->id()),
@@ -120,12 +124,16 @@ class TaskStages extends Page implements HasTable
                             return null;
                         }
                         $files = explode(',', $record->attachments);
-                        return url('/download-attachment/' . urlencode($files[0]));
+                        return route('download.attachment', ['path' => $files[0]]);
                     })
                     ->openUrlInNewTab()
                     ->visible(function ($record) {
-                        return !empty($record->attachments) && 
-                               ($record->task->creator_id === auth()->id() || $record->task->receiver_id === auth()->id());
+                        $hasAttachments = !empty($record->attachments);
+                        $isCreator = $record->task->creator_id === auth()->id();
+                        $isReceiver = $record->task->receiver_id === auth()->id();
+                        
+                        // Debug: إظهار الزر دائماً للاختبار
+                        return $hasAttachments && ($isCreator || $isReceiver);
                     }),
                 
 
