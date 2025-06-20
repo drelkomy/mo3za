@@ -12,8 +12,15 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // Run the subscription usage check daily
-        $schedule->command('subscriptions:check-usage')->daily();
+        // تشغيل معالج الطابور كل دقيقة
+        $schedule->command('queue:work --stop-when-empty --tries=3')
+                 ->everyMinute()
+                 ->withoutOverlapping();
+                 
+        // تشغيل معالج الطابور المفشل كل ساعة
+        $schedule->command('queue:retry all')
+                 ->hourly()
+                 ->withoutOverlapping();
     }
 
     /**

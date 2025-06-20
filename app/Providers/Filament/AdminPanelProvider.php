@@ -45,6 +45,7 @@ class AdminPanelProvider extends PanelProvider
             ->resources([
                 \App\Filament\Resources\UserResource::class,
                 \App\Filament\Resources\TeamResource::class,
+                \App\Filament\Resources\InvitationResource::class,
                 \App\Filament\Resources\TaskResource::class,
                 \App\Filament\Resources\RewardResource::class,
                 \App\Filament\Resources\MyTaskResource::class,

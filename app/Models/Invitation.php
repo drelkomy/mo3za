@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;
 use App\Jobs\SendInvitationJob;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class Invitation extends Model
 {
@@ -89,6 +90,13 @@ class Invitation extends Model
     // إنشاء دعوة جديدة مع إرسالها
     public static function createAndSend(int $teamId, int $senderId, string $email): self
     {
+        // تسجيل بدء العملية
+        Log::info('Creating invitation', [
+            'team_id' => $teamId,
+            'sender_id' => $senderId,
+            'email' => $email,
+        ]);
+
         $invitation = self::create([
             'team_id' => $teamId,
             'sender_id' => $senderId,
@@ -97,8 +105,14 @@ class Invitation extends Model
             'status' => 'pending',
         ]);
 
+        // تسجيل إنشاء الدعوة
+        Log::info('Invitation created', [
+            'invitation_id' => $invitation->id,
+            'token' => $invitation->token,
+        ]);
+
         // إرسال الدعوة عبر الطابور
-        SendInvitationJob::dispatch($invitation);
+        SendInvitationJob::dispatch($invitation)->onQueue('emails');
 
         return $invitation;
     }
@@ -107,7 +121,7 @@ class Invitation extends Model
     public function sendWithoutQueue(): void
     {
         // تسجيل في السجل
-        \Illuminate\Support\Facades\Log::info('Sending invitation without queue', [
+        Log::info('Sending invitation without queue', [
             'invitation_id' => $this->id,
             'email' => $this->email,
             'team' => $this->team->name,

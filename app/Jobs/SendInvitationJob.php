@@ -39,29 +39,40 @@ class SendInvitationJob implements ShouldQueue
         Log::info('Processing invitation job', [
             'invitation_id' => $this->invitation->id,
             'email' => $this->invitation->email,
+            'mail_config' => [
+                'driver' => config('mail.default'),
+                'host' => config('mail.mailers.smtp.host'),
+                'port' => config('mail.mailers.smtp.port'),
+                'encryption' => config('mail.mailers.smtp.encryption'),
+                'username' => config('mail.mailers.smtp.username'),
+                'from' => config('mail.from.address'),
+            ]
         ]);
 
         try {
-            // إرسال إيميل الدعوة
-            Mail::to($this->invitation->email)->send(new InvitationMail($this->invitation));
-            
-            // تسجيل نجاح الإرسال
-            Log::info('Invitation email sent successfully', [
-                'invitation_id' => $this->invitation->id,
-                'email' => $this->invitation->email,
-            ]);
-            
-            // إرسال إشعار للمرسل
-            SendNotificationJob::dispatch(
-                $this->invitation->sender,
-                'تم إرسال الدعوة',
-                "تم إرسال دعوة انضمام للفريق {$this->invitation->team->name} إلى {$this->invitation->email}",
-                'success'
-            );
-
-            // إرسال إشعار للمستقبل إذا كان لديه حساب
+            // التحقق من وجود المستخدم
             $existingUser = User::where('email', $this->invitation->email)->first();
-            if ($existingUser) {
+            
+            // إرسال إيميل الدعوة للمستخدمين الجدد
+            if (!$existingUser) {
+                // إرسال إيميل الدعوة مباشرة (بدون طابور)
+                $email = new InvitationMail($this->invitation);
+                Mail::to($this->invitation->email)->send($email);
+                
+                // تسجيل نجاح الإرسال
+                Log::info('Invitation email sent successfully to new user', [
+                    'invitation_id' => $this->invitation->id,
+                    'email' => $this->invitation->email,
+                ]);
+            } else {
+                // تسجيل أن المستخدم موجود بالفعل
+                Log::info('User already exists, sending notification only', [
+                    'invitation_id' => $this->invitation->id,
+                    'email' => $this->invitation->email,
+                    'user_id' => $existingUser->id,
+                ]);
+                
+                // إرسال إشعار للمستخدم الموجود
                 SendNotificationJob::dispatch(
                     $existingUser,
                     'دعوة انضمام للفريق',
@@ -77,6 +88,7 @@ class SendInvitationJob implements ShouldQueue
                 'invitation_id' => $this->invitation->id,
                 'email' => $this->invitation->email,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             // إعادة رمي الاستثناء للسماح بإعادة المحاولة
@@ -91,6 +103,7 @@ class SendInvitationJob implements ShouldQueue
             'invitation_id' => $this->invitation->id,
             'email' => $this->invitation->email,
             'error' => $exception->getMessage(),
+            'trace' => $exception->getTraceAsString(),
         ]);
         
         // إرسال إشعار للمرسل بفشل الإرسال

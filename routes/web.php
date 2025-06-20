@@ -97,8 +97,5 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
     
     // رفض الدعوة
     Route::get('/{token}/reject', [InvitationController::class, 'reject'])->name('reject');
-    
-    // اختبار إرسال الدعوة بدون طابور (للاختبار فقط)
-    Route::get('/test-send/{invitationId}', [InvitationController::class, 'testSendWithoutQueue'])
-        ->name('test-send');
+
 });
