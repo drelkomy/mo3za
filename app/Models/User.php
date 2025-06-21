@@ -16,11 +16,24 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements FilamentUser, HasMedia
 {
+    // المنطقة التي ينتمي إليها المستخدم
+    public function area()
+    {
+        return $this->belongsTo(\App\Models\Area::class, 'area_id');
+    }
+
+    // المدينة التي ينتمي إليها المستخدم
+    public function city()
+    {
+        return $this->belongsTo(\App\Models\City::class, 'city_id');
+    }
+
     use HasApiTokens, HasFactory, Notifiable, InteractsWithMedia, HasRoles;
 
     protected $fillable = [
         'name', 'email', 'password', 'phone', 'gender', 'birthdate', 
-        'is_active', 'user_type', 'avatar_url'
+        'is_active', 'user_type', 'avatar_url',
+        'area_id', 'city_id'
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -103,6 +116,11 @@ class User extends Authenticatable implements FilamentUser, HasMedia
     public function sentInvitations(): HasMany
     {
         return $this->hasMany(Invitation::class, 'sender_id');
+    }
+
+    public function joinRequests(): HasMany
+    {
+        return $this->hasMany(JoinRequest::class);
     }
 
     protected $activeSubscriptionCache = null;

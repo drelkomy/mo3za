@@ -4,15 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\TeamResource\Pages;
 use App\Models\Team;
-use App\Jobs\SendInvitationJob;
 use App\Models\User;
+use App\Models\JoinRequest;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+use Filament\Notifications\Notification;
 
 class TeamResource extends Resource
 {
@@ -47,12 +48,12 @@ class TeamResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
-        
+
         // الأدمن يرى جميع الفرق
         if (auth()->user()?->hasRole('admin')) {
             return $query;
         }
-        
+
         // العضو يرى فريقه فقط (كمالك فقط)
         return $query->where('owner_id', auth()->id());
     }
@@ -74,114 +75,60 @@ class TeamResource extends Resource
                 Tables\Columns\TextColumn::make('created_at')->label('تاريخ الإنشاء')->dateTime(),
             ])
             ->headerActions([
-                Tables\Actions\Action::make('invite')
-                    ->label('إرسال دعوة')
-                    ->icon('heroicon-o-envelope')
+                Tables\Actions\Action::make('inviteMember')
+                    ->label('إرسال طلب انضمام')
+                    ->icon('heroicon-o-user-plus')
                     ->form([
                         Forms\Components\TextInput::make('email')
-                            ->label('البريد الإلكتروني')
+                            ->label('البريد الإلكتروني للعضو')
                             ->email()
                             ->required(),
                     ])
                     ->action(function (array $data) {
-                        $team = auth()->user()->ownedTeams()->first();
+                        $owner = Auth::user();
+                        $team = $owner->ownedTeams()->first();
+
                         if (!$team) {
+                            Notification::make()->title('خطأ')->body('لا تملك فريقًا لدعوة أعضاء إليه.')->danger()->send();
                             return;
                         }
-                        
-                        // التحقق من وجود المستخدم
-                        $existingUser = User::where('email', $data['email'])->first();
-                        
-                        // التحقق من وجود دعوة سابقة
-                        $existingInvitation = \App\Models\Invitation::where('team_id', $team->id)
-                            ->where('email', $data['email'])
+
+                        $userToInvite = User::where('email', $data['email'])->first();
+
+                        if (!$userToInvite) {
+                            Notification::make()->title('المستخدم غير موجود')->body('لا يوجد مستخدم مسجل بهذا البريد الإلكتروني.')->danger()->send();
+                            return;
+                        }
+
+                        if ($team->hasMember($userToInvite->id) || $team->owner_id === $userToInvite->id) {
+                            Notification::make()->title('عضو بالفعل')->body('هذا المستخدم عضو بالفعل في الفريق.')->warning()->send();
+                            return;
+                        }
+
+                        $existingRequest = JoinRequest::where('user_id', $userToInvite->id)
+                            ->where('team_id', $team->id)
                             ->where('status', 'pending')
-                            ->first();
-                        
-                        if ($existingInvitation) {
-                            // إظهار رسالة خطأ إذا كانت هناك دعوة سابقة
-                            \Filament\Notifications\Notification::make()
-                                ->title('الدعوة موجودة بالفعل')
-                                ->body("تم إرسال دعوة لهذا البريد الإلكتروني مسبقاً")
-                                ->danger()
-                                ->send();
+                            ->exists();
+
+                        if ($existingRequest) {
+                            Notification::make()->title('طلب موجود')->body('يوجد طلب انضمام معلق بالفعل لهذا المستخدم.')->warning()->send();
                             return;
                         }
-                        
-                        // إنشاء الدعوة
-                        $invitation = \App\Models\Invitation::create([
-                            'team_id' => $team->id,
-                            'sender_id' => auth()->id(),
-                            'email' => $data['email'],
-                            'token' => \Illuminate\Support\Str::random(32),
-                            'status' => 'pending',
-                        ]);
-                        
-                        // تسجيل إنشاء الدعوة
-                        Log::info('Invitation created from TeamResource', [
-                            'invitation_id' => $invitation->id,
-                            'email' => $invitation->email,
+
+                        JoinRequest::create([
+                            'user_id' => $userToInvite->id,
                             'team_id' => $team->id,
                         ]);
-                        
-                        if ($existingUser) {
-                            // إرسال إشعار فقط للمستخدمين الموجودين
-                            Log::info('User already exists, sending notification only', [
-                                'user_id' => $existingUser->id,
-                                'email' => $existingUser->email,
-                            ]);
-                            
-                            // إرسال إشعار للمستخدم الموجود
-                            \App\Jobs\SendNotificationJob::dispatch(
-                                $existingUser,
-                                'دعوة انضمام للفريق',
-                                "تم دعوتك للانضمام إلى فريق {$team->name}",
-                                'info',
-                                ['invitation_id' => $invitation->id],
-                                url('/invitations/' . $invitation->token)
-                            );
-                            
-                            // إظهار رسالة نجاح
-                            \Filament\Notifications\Notification::make()
-                                ->title('تم إرسال الدعوة')
-                                ->body("تم إرسال إشعار للمستخدم {$data['email']}")
-                                ->success()
-                                ->send();
-                        } else {
-                            // إرسال إيميل للمستخدمين الجدد
-                            Log::info('New user, sending email invitation', [
-                                'email' => $data['email'],
-                            ]);
-                            
-                            // إرسال الدعوة عبر البريد
-                            \Illuminate\Support\Facades\Mail::to($data['email'])
-                                ->send(new \App\Mail\InvitationMail($invitation));
-                            
-                            // إظهار رسالة نجاح
-                            \Filament\Notifications\Notification::make()
-                                ->title('تم إرسال الدعوة')
-                                ->body("تم إرسال دعوة بالبريد الإلكتروني إلى {$data['email']}")
-                                ->success()
-                                ->send();
-                        }
-                        
-                        // إرسال إشعار للمرسل
-                        \App\Jobs\SendNotificationJob::dispatch(
-                            auth()->user(),
-                            'تم إرسال الدعوة',
-                            "تم إرسال دعوة انضمام للفريق {$team->name} إلى {$data['email']}",
-                            'success'
-                        );
+
+                        Notification::make()->title('تم إرسال الطلب بنجاح')->body("تم إرسال طلب انضمام إلى {$userToInvite->name}.")->success()->send();
                     })
-                    ->visible(fn() => auth()->user()->ownedTeams()->exists() && !auth()->user()?->hasRole('admin')),
+                    ->visible(fn (): bool => Auth::user()->ownedTeams()->exists() && !Auth::user()->hasRole('admin'))
             ])
             ->actions([
-                Tables\Actions\EditAction::make()
-                    ->visible(fn(Team $record) => $record->owner_id === auth()->id()),
-                
-                Tables\Actions\ViewAction::make()
-                    ->label('عرض الأعضاء'),
-            ]);
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make()->label('عرض الأعضاء'),
+            ])
+            ->bulkActions([]);
     }
 
     public static function getPages(): array

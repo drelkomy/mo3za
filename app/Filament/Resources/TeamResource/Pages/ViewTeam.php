@@ -17,25 +17,6 @@ class ViewTeam extends ViewRecord
         return [
             Actions\EditAction::make()
                 ->visible(fn() => $this->record->owner_id === auth()->id()),
-            Actions\Action::make('invite')
-                ->label('إرسال دعوة')
-                ->icon('heroicon-o-envelope')
-                ->form([
-                    \Filament\Forms\Components\TextInput::make('email')
-                        ->label('البريد الإلكتروني')
-                        ->email()
-                        ->required(),
-                ])
-                ->action(function (array $data) {
-                    \App\Models\Invitation::create([
-                        'team_id' => $this->record->id,
-                        'email' => $data['email'],
-                        'sender_id' => auth()->id(),
-                        'token' => \Str::random(32),
-                        'status' => 'pending',
-                    ]);
-                })
-                ->visible(fn() => $this->record->owner_id === auth()->id()),
         ];
     }
 

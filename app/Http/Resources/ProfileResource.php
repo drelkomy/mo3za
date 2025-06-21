@@ -24,7 +24,32 @@ class ProfileResource extends JsonResource
             'is_active' => $this->is_active,
             'gender' => $this->gender,
             'birthdate' => $this->birthdate?->format('Y-m-d'),
-            'password' => $this->password,
+            'area' => $this->whenLoaded('area', function () {
+                return $this->area ? [
+                    'id' => $this->area->id,
+                    'name' => $this->area->name,
+                ] : null;
+            }),
+            'city' => $this->whenLoaded('city', function () {
+                return $this->city ? [
+                    'id' => $this->city->id,
+                    'name' => $this->city->name,
+                ] : null;
+            }),
+            'active_subscription' => $this->whenLoaded('subscriptions', function () {
+                $activeSubscription = $this->subscriptions->where('status', 'active')->first();
+
+                if (!$activeSubscription) {
+                    return null;
+                }
+
+                return [
+                    'package_name' => optional($activeSubscription->package)->name,
+                    'status' => $activeSubscription->status,
+                    'tasks_remaining' => $activeSubscription->max_tasks - $activeSubscription->tasks_created,
+                    'participants_remaining' => $activeSubscription->max_participants - $activeSubscription->participants_created,
+                ];
+            }),
         ];
     }
 }

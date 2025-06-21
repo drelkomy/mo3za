@@ -33,10 +33,12 @@ class LoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.required' => 'البريد الإلكتروني مطلوب',
-            'email.email' => 'يرجى إدخال بريد إلكتروني صالح',
-            'password.required' => 'كلمة المرور مطلوبة',
-            'password.min' => 'يجب أن تتكون كلمة المرور من 6 أحرف على الأقل',
+            'email.required' => 'حقل البريد الإلكتروني مطلوب.',
+            'email.string' => 'يجب أن يكون البريد الإلكتروني نصًا.',
+            'email.email' => 'يجب أن يكون البريد الإلكتروني عنوان بريد إلكتروني صالحًا.',
+            'password.required' => 'حقل كلمة المرور مطلوب.',
+            'password.string' => 'يجب أن تكون كلمة المرور نصًا.',
+            'password.min' => 'يجب أن تتكون كلمة المرور من 6 أحرف على الأقل.',
         ];
     }
 }

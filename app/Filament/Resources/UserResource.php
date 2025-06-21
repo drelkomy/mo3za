@@ -51,7 +51,8 @@ class UserResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->label('الاسم')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->unique(ignoreRecord: true),
                         Forms\Components\TextInput::make('email')
                             ->label('البريد الإلكتروني')
                             ->email()
@@ -67,7 +68,8 @@ class UserResource extends Resource
                         Forms\Components\TextInput::make('phone')
                             ->label('رقم الهاتف')
                             ->tel()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->unique(ignoreRecord: true),
                         Forms\Components\Select::make('user_type')
                             ->label('نوع العضو')
                             ->options([

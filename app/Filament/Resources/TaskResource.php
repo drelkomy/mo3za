@@ -51,7 +51,7 @@ class TaskResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()->with(['receiver']);
         
         if (!auth()->user()?->hasRole('admin')) {
             $query->where('creator_id', auth()->id());
@@ -98,13 +98,35 @@ class TaskResource extends Resource
                         ->required()
                         ->placeholder('اختر عضو من فريقك'),
                     
+                    Forms\Components\DatePicker::make('start_date')
+                        ->label('تاريخ البداية')
+                        ->default(now())
+                        ->required()
+                        ->reactive()
+                        ->afterStateUpdated(function (callable $set, callable $get, $state) {
+                            if ($get('duration_days') && $state) {
+                                $set('due_date', now()->parse($state)->addDays((int) $get('duration_days'))->toDateString());
+                            }
+                        }),
+                    
                     Forms\Components\TextInput::make('duration_days')
                         ->label('المدة بالأيام')
                         ->numeric()
                         ->default(7)
                         ->required()
                         ->minValue(1)
-                        ->maxValue(365),
+                        ->maxValue(365)
+                        ->reactive()
+                        ->afterStateUpdated(function (callable $set, callable $get, $state) {
+                            if ($get('start_date') && $state) {
+                                $set('due_date', now()->parse($get('start_date'))->addDays((int) $state)->toDateString());
+                            }
+                        }),
+                    
+                    Forms\Components\DatePicker::make('due_date')
+                        ->label('تاريخ النهاية')
+                        ->disabled()
+                        ->dehydrated(false),
                     
                     Forms\Components\TextInput::make('total_stages')
                         ->label('عدد المراحل')
@@ -112,22 +134,32 @@ class TaskResource extends Resource
                         ->default(3)
                         ->required()
                         ->minValue(1)
-                        ->maxValue(function () {
-                            $user = auth()->user();
-                            $subscription = $user?->activeSubscription();
-                            return $subscription?->max_milestones_per_task ?? 10;
-                        }),
+                        ->maxValue(10),
+                    
+                    Forms\Components\Select::make('reward_type')
+                        ->label('نوع المكافأة')
+                        ->options([
+                            'cash' => 'نقدي',
+                            'other' => 'أخرى',
+                        ])
+                        ->default('cash')
+                        ->required()
+                        ->reactive(),
                     
                     Forms\Components\TextInput::make('reward_amount')
                         ->label('مبلغ المكافأة')
                         ->numeric()
-                        ->suffix('ريال'),
+                        ->suffix('ريال')
+                        ->visible(fn ($get) => $get('reward_type') === 'cash'),
+                    
+                    Forms\Components\TextInput::make('reward_description')
+                        ->label('وصف المكافأة')
+                        ->visible(fn ($get) => $get('reward_type') === 'other'),
                 ])
                 ->columns(2),
             
             Forms\Components\Hidden::make('creator_id')->default(auth()->id()),
             Forms\Components\Hidden::make('status')->default('pending'),
-            Forms\Components\Hidden::make('start_date')->default(now()->toDateString()),
         ]);
     }
 
@@ -143,7 +175,9 @@ class TaskResource extends Resource
                 Tables\Columns\TextColumn::make('receiver.name')
                     ->label('المستلم')
                     ->badge()
-                    ->color('info'),
+                    ->color('info')
+                    ->default('غير محدد')
+                    ->formatStateUsing(fn ($state) => $state ?? 'غير محدد'),
                 
                 Tables\Columns\TextColumn::make('progress')
                     ->label('التقدم')
@@ -167,15 +201,41 @@ class TaskResource extends Resource
                         default => 'gray',
                     }),
                 
-                Tables\Columns\TextColumn::make('due_date')
-                    ->label('تاريخ الانتهاء')
+                Tables\Columns\TextColumn::make('start_date')
+                    ->label('تاريخ البداية')
                     ->date()
                     ->sortable(),
                 
+                Tables\Columns\TextColumn::make('due_date')
+                    ->label('تاريخ النهاية')
+                    ->date()
+                    ->sortable(),
+                
+                Tables\Columns\TextColumn::make('reward_type')
+                    ->label('نوع المكافأة')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'cash' => 'نقدي',
+                        'other' => 'أخرى',
+                        default => $state,
+                    })
+                    ->color(fn (string $state): string => match ($state) {
+                        'cash' => 'success',
+                        'other' => 'warning',
+                        default => 'gray',
+                    }),
+                
                 Tables\Columns\TextColumn::make('reward_amount')
-                    ->label('المكافأة')
+                    ->label('مبلغ المكافأة')
                     ->money('SAR')
-                    ->color('success'),
+                    ->color('success')
+                    ->placeholder('لا يوجد'),
+                
+                Tables\Columns\TextColumn::make('reward_description')
+                    ->label('وصف المكافأة')
+                    ->limit(30)
+                    ->color('warning')
+                    ->placeholder('لا يوجد'),
             ])
             ->actions([
                 Tables\Actions\Action::make('stages')
@@ -220,6 +280,32 @@ class TaskResource extends Resource
                 Tables\Actions\ViewAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
+    }
+
+    protected static function afterCreate(Task $record): void
+    {
+        // حساب تاريخ النهاية
+        if ($record->duration_days && $record->start_date) {
+            $record->update([
+                'due_date' => \Carbon\Carbon::parse($record->start_date)->addDays((int) $record->duration_days)
+            ]);
+        }
+        
+        // إنشاء المراحل
+        if ($record->total_stages > 0) {
+            $stages = [];
+            for ($i = 1; $i <= $record->total_stages; $i++) {
+                $stages[] = [
+                    'task_id' => $record->id,
+                    'stage_number' => $i,
+                    'title' => "المرحلة {$i}",
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            \App\Models\TaskStage::insert($stages);
+        }
     }
 
     public static function getPages(): array

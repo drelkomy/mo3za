@@ -68,6 +68,11 @@ class Team extends Model
         return $this->hasMany(Task::class);
     }
 
+    public function joinRequests(): HasMany
+    {
+        return $this->hasMany(JoinRequest::class);
+    }
+
     // دوال مساعدة لتحسين الأداء
     public function getMembersCount(): int
     {
