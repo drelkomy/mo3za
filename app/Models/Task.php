@@ -57,6 +57,33 @@ class Task extends Model implements HasMedia
         return $this->hasMany(TaskStage::class)->orderBy('stage_number');
     }
 
+    public function updateProgress(): void
+    {
+        if ($this->total_stages > 0) {
+            $completedStages = $this->stages()->where('status', 'completed')->count();
+            $progress = ($completedStages / $this->total_stages) * 100;
+            
+            $this->progress = round($progress);
+
+            if ($this->progress == 100) {
+                $this->status = 'completed';
+            } else {
+                // If progress is > 0 but not 100, it's in progress.
+                // If progress is 0, it remains as it was (e.g., pending).
+                if ($this->progress > 0) {
+                    $this->status = 'in_progress';
+                }
+            }
+
+        } else {
+            // If there are no stages, we can consider it 100% complete by default
+            // or handle as per business logic. For now, let's set to 0.
+            $this->progress = 0;
+        }
+
+        $this->save();
+    }
+
     public function rewards(): HasMany
     {
         return $this->hasMany(Reward::class);

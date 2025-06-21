@@ -13,6 +13,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Infolists;
 use App\Models\TaskStage;
+use Filament\Notifications\Notification;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
 
@@ -67,7 +68,7 @@ class TaskStages extends Page implements HasTable
                     ->label('تاريخ الإكمال')
                     ->dateTime(),
                 
-                Tables\Columns\TextColumn::make('proof_notes')
+                Tables\Columns\TextColumn::make('description')
                     ->label('ملاحظات الإثبات')
                     ->limit(50),
             ])
@@ -93,24 +94,25 @@ class TaskStages extends Page implements HasTable
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('info')
                     ->form([
-                        Textarea::make('proof_notes')
+                        Textarea::make('description')
                             ->label('ملاحظات الإثبات'),
-                        SpatieMediaLibraryFileUpload::make('attachments')
+                        SpatieMediaLibraryFileUpload::make('proof_attachments') // A temporary key
                             ->label('المرفقات')
-                            ->collection('proofs')
+                            ->collection('proofs') // Match the collection name
                             ->multiple()
                             ->maxFiles(5),
                     ])
                     ->action(function (TaskStage $record, array $data): void {
-                        $record->update([
-                            'proof_notes' => $data['proof_notes'],
-                        ]);
+                        $record->update(['description' => $data['description']]);
+                        // The Spatie component will handle the file uploads automatically.
                         Notification::make()
                             ->title('تم رفع الإثبات بنجاح')
                             ->success()
                             ->send();
                     })
-                    ->visible(fn (): bool => $this->record->receiver_id === auth()->id()),
+                    ->visible(fn (TaskStage $record): bool => 
+                        $record->status !== 'completed' && $this->record->receiver_id === auth()->id()
+                    ),
             ])
             ->defaultSort('stage_number');
     }
