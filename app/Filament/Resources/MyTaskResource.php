@@ -37,6 +37,11 @@ class MyTaskResource extends Resource
         return auth()->check() && !auth()->user()?->hasRole('admin');
     }
 
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getModel()::where('receiver_id', auth()->id())->where('status', 'pending')->count();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();

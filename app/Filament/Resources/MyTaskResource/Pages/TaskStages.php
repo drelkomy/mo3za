@@ -12,6 +12,9 @@ use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Infolists;
+use App\Models\TaskStage;
+use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
+use Filament\Forms\Components\Textarea;
 
 class TaskStages extends Page implements HasTable
 {
@@ -67,6 +70,47 @@ class TaskStages extends Page implements HasTable
                 Tables\Columns\TextColumn::make('proof_notes')
                     ->label('ملاحظات الإثبات')
                     ->limit(50),
+            ])
+            ->actions([
+                Tables\Actions\Action::make('complete_stage')
+                    ->label('إنجاز المرحلة')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->action(function (TaskStage $record) {
+                        $record->markAsCompleted();
+                        Notification::make()
+                            ->title('تم إنجاز المرحلة بنجاح')
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn (TaskStage $record): bool => 
+                        $record->status === 'pending' && $this->record->receiver_id === auth()->id()
+                    ),
+
+                Tables\Actions\Action::make('upload_proof')
+                    ->label('رفع إثبات')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('info')
+                    ->form([
+                        Textarea::make('proof_notes')
+                            ->label('ملاحظات الإثبات'),
+                        SpatieMediaLibraryFileUpload::make('attachments')
+                            ->label('المرفقات')
+                            ->collection('proofs')
+                            ->multiple()
+                            ->maxFiles(5),
+                    ])
+                    ->action(function (TaskStage $record, array $data): void {
+                        $record->update([
+                            'proof_notes' => $data['proof_notes'],
+                        ]);
+                        Notification::make()
+                            ->title('تم رفع الإثبات بنجاح')
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn (): bool => $this->record->receiver_id === auth()->id()),
             ])
             ->defaultSort('stage_number');
     }
