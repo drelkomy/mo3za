@@ -246,37 +246,29 @@ class TaskResource extends Resource
                     ->visible(fn () => auth()->user()?->hasRole('admin')),
                 
                 Tables\Actions\Action::make('complete')
-                    ->label('إنهاء المهمة')
+                    ->label('إنهاء وتوزيع المكافأة')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->action(fn (Task $record) => app(\App\Services\TaskService::class)->completeTaskByLeader($record))
+                    ->action(function (Task $record) {
+                        // 1. Mark task as completed
+                        $record->status = 'completed';
+                        $record->save();
+
+                        // 2. Automatically create the reward if applicable
+                        if ($record->reward_type === 'cash' && $record->reward_amount > 0) {
+                            \App\Models\Reward::create([
+                                'task_id' => $record->id,
+                                'giver_id' => $record->creator_id, // The one who created the task
+                                'receiver_id' => $record->receiver_id,
+                                'amount' => $record->reward_amount,
+                                'status' => 'pending', // Pending for the receiver to claim
+                            ]);
+                        }
+                        
+                        
+                    })
                     ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->status !== 'completed')
                     ->requiresConfirmation(),
-                
-                Tables\Actions\Action::make('reward')
-                    ->label('تسليم المكافأة')
-                    ->icon('heroicon-o-gift')
-                    ->color('warning')
-                    ->form([
-                        Forms\Components\TextInput::make('amount')
-                            ->label('المبلغ')
-                            ->numeric()
-                            ->default(fn (Task $record) => $record->reward_amount)
-                            ->required(),
-                        Forms\Components\Textarea::make('notes')
-                            ->label('ملاحظات'),
-                    ])
-                    ->action(function (array $data, Task $record) {
-                        \App\Models\Reward::create([
-                            'task_id' => $record->id,
-                            'giver_id' => auth()->id(),
-                            'receiver_id' => $record->receiver_id,
-                            'amount' => $data['amount'],
-                            'notes' => $data['notes'],
-                            'status' => 'pending',
-                        ]);
-                    })
-                    ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->status === 'completed'),
                 
                 Tables\Actions\ViewAction::make(),
             ])
