@@ -79,8 +79,9 @@ class TaskResource extends Resource
             
             Forms\Components\Section::make('تفاصيل التكليف')
                 ->schema([
-                    Forms\Components\Select::make('receiver_id')
-                        ->label('المستلم')
+                    Forms\Components\Select::make('receiver_ids')
+                        ->label('المستلمون')
+                        ->multiple()
                         ->options(function () {
                             $user = auth()->user();
                             if ($user?->hasRole('admin')) {
@@ -96,7 +97,7 @@ class TaskResource extends Resource
                         })
                         ->searchable()
                         ->required()
-                        ->placeholder('اختر عضو من فريقك'),
+                        ->placeholder('اختر عضو أو أكثر من فريقك'),
                     
                     Forms\Components\DatePicker::make('start_date')
                         ->label('تاريخ البداية')
@@ -282,31 +283,7 @@ class TaskResource extends Resource
             ->defaultSort('created_at', 'desc');
     }
 
-    protected static function afterCreate(Task $record): void
-    {
-        // حساب تاريخ النهاية
-        if ($record->duration_days && $record->start_date) {
-            $record->update([
-                'due_date' => \Carbon\Carbon::parse($record->start_date)->addDays((int) $record->duration_days)
-            ]);
-        }
-        
-        // إنشاء المراحل
-        if ($record->total_stages > 0) {
-            $stages = [];
-            for ($i = 1; $i <= $record->total_stages; $i++) {
-                $stages[] = [
-                    'task_id' => $record->id,
-                    'stage_number' => $i,
-                    'title' => "المرحلة {$i}",
-                    'status' => 'pending',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            \App\Models\TaskStage::insert($stages);
-        }
-    }
+    // The afterCreate hook has been moved to the CreateTask page to handle the creation logic.
 
     public static function getPages(): array
     {
