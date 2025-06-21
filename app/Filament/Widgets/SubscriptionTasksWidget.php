@@ -21,56 +21,45 @@ class SubscriptionTasksWidget extends BaseWidget
     protected function getStats(): array
     {
         $user = auth()->user();
-        
-        if (!$user || !$user->hasRole('داعم') || $user->hasRole('admin')) {
-            return [];
-        }
-        
-        $subscription = $user->activeSubscription;
 
-        if (!$subscription) {
-            return [];
-        }
+        // Get all tasks created by the user
+        $tasks = Task::where('creator_id', $user->id)->get();
+        $taskIds = $tasks->pluck('id');
 
-        // المهام المكتملة والمعلقة
-        $completedTasks = Task::where('supporter_id', $user->id)
-            ->where('status', 'completed')
-            ->count();
-        $pendingTasks = Task::where('supporter_id', $user->id)
-            ->where('status', 'pending')
-            ->count();
-            
-        // المكافآت
-        $totalRewards = Reward::whereHas('task', function ($q) use ($user) {
-            $q->where('supporter_id', $user->id);
-        })->sum('amount');
-        
-        // المهام والمكافآت السابقة
-        $previousCompletedTasks = $subscription->previous_tasks_completed ?? 0;
-        $previousPendingTasks = $subscription->previous_tasks_pending ?? 0;
-        $previousRewards = $subscription->previous_rewards_amount ?? 0;
+        // Calculate total tasks
+        $totalTasks = $tasks->count();
+
+        // Calculate total stages from the tasks created by the user
+        // This assumes a 'stages' relationship exists on the Task model
+        $totalStages = $tasks->reduce(function ($carry, $task) {
+            return $carry + $task->stages->count();
+        }, 0);
+
+        // Calculate total rewards given by the user
+        $totalRewards = Reward::where('giver_id', $user->id)->sum('amount');
 
         return [
-            Stat::make('المهام المكتملة', $completedTasks)
-                ->description('المهام المكتملة السابقة: ' . $previousCompletedTasks)
-                ->descriptionIcon('heroicon-m-check-circle')
+            Stat::make('إجمالي المهام التي أنشأتها', $totalTasks)
+                ->description('العدد الكلي للمهام الموزعة على فريقك')
+                ->descriptionIcon('heroicon-m-clipboard-document-list')
                 ->color('success'),
                 
-            Stat::make('المهام قيد التنفيذ', $pendingTasks)
-                ->description('المهام المعلقة السابقة: ' . $previousPendingTasks)
-                ->descriptionIcon('heroicon-m-clock')
-                ->color('warning'),
+            Stat::make('إجمالي المراحل', $totalStages)
+                ->description('مجموع كل المراحل في جميع المهام')
+                ->descriptionIcon('heroicon-m-list-bullet')
+                ->color('info'),
                 
-            Stat::make('إجمالي المكافآت', number_format($totalRewards, 2) . ' ريال')
-                ->description('المكافآت السابقة: ' . number_format($previousRewards, 2) . ' ريال')
+            Stat::make('إجمالي المكافآت الموزعة', number_format($totalRewards, 2) . ' ريال')
+                ->description('مجموع المبالغ التي تم توزيعها كمكافآت')
                 ->descriptionIcon('heroicon-m-banknotes')
-                ->color('success'),
+                ->color('primary'),
         ];
     }
     
     public static function canView(): bool
     {
         $user = auth()->user();
-        return $user && $user->hasRole('داعم') && $user->hasActiveSubscription();
+        // Show this widget only to subscribed users who are not admins.
+        return $user && $user->hasActiveSubscription() && !$user->hasRole('admin');
     }
 }
