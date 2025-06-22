@@ -13,11 +13,13 @@ class PaymentController extends Controller
 {
     public function callback(Request $request): JsonResponse
     {
-        Log::info('Payment callback received', $request->all());
+        Log::info('PayTabs callback received', $request->all());
         
-        $subscriptionId = $request->input('subscription_id');
-        $status = $request->input('status'); // success, failed, pending
-        $transactionId = $request->input('transaction_id');
+        // PayTabs يرسل cart_id بصيغة subscription_123
+        $cartId = $request->input('cart_id');
+        $subscriptionId = str_replace('subscription_', '', $cartId);
+        $respStatus = $request->input('resp_status'); // A = Authorized, H = Hold, P = Pending, V = Voided, E = Error
+        $transactionId = $request->input('tran_ref');
         
         $subscription = Subscription::find($subscriptionId);
         
@@ -25,11 +27,10 @@ class PaymentController extends Controller
             return response()->json(['message' => 'الاشتراك غير موجود'], 404);
         }
         
-        if ($status === 'success') {
+        if ($respStatus === 'A') { // Authorized = نجح الدفع
             $subscription->update([
                 'status' => 'active',
-                'transaction_id' => $transactionId,
-                'activated_at' => now()
+                'transaction_id' => $transactionId
             ]);
             
             Cache::forget('user_subscription_' . $subscription->user_id);

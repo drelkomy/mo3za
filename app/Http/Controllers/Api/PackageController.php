@@ -18,11 +18,21 @@ class PackageController extends Controller
     {
         $cacheKey = 'packages_list';
         
-        $packages = Cache::remember($cacheKey, 600, function () {
-            return Package::where('is_active', true)
-                ->select(['id', 'name', 'description', 'price', 'duration_days', 'max_tasks', 'max_team_members', 'features', 'is_trial'])
-                ->orderBy('price')
-                ->get();
+        $packages = Cache::remember($cacheKey . '_' . auth()->id(), 600, function () {
+            $query = Package::where('is_active', true)
+                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial']);
+            
+            // إخفاء الباقة التجريبية إذا استخدمها المستخدم من قبل
+            $hasUsedTrial = auth()->user()->subscriptions()
+                ->whereHas('package', function($q) {
+                    $q->where('is_trial', true);
+                })->exists();
+                
+            if ($hasUsedTrial) {
+                $query->where('is_trial', false);
+            }
+            
+            return $query->orderBy('price')->get();
         });
         
         return response()->json([
@@ -43,7 +53,6 @@ class PackageController extends Controller
         // فحص الاشتراك النشط
         $activeSubscription = auth()->user()->subscriptions()
             ->where('status', 'active')
-            ->where('end_date', '>', now())
             ->first();
             
         if ($activeSubscription) {
@@ -51,7 +60,7 @@ class PackageController extends Controller
                 'message' => 'لديك اشتراك نشط بالفعل',
                 'current_subscription' => [
                     'package_name' => $activeSubscription->package->name,
-                    'end_date' => $activeSubscription->end_date
+                    'status' => $activeSubscription->status
                 ]
             ], 422);
         }
@@ -61,9 +70,8 @@ class PackageController extends Controller
             'user_id' => auth()->id(),
             'package_id' => $package->id,
             'start_date' => now(),
-            'end_date' => now()->addDays($package->duration_days),
             'status' => $package->is_trial ? 'active' : 'pending',
-            'amount' => $package->price,
+            'price_paid' => $package->price,
         ]);
         
         // تنظيف cache
@@ -77,8 +85,8 @@ class PackageController extends Controller
             'status' => $subscription->status
         ];
         
-        // إضافة رابط الدفع للباقات المدفوعة
-        if (!$package->is_trial) {
+        // إضافة رابط الدفع للباقات الحقيقية (غير التجريبية)
+        if (!$package->is_trial && $package->price > 0) {
             $paymentUrl = $this->generatePaymentUrl($subscription, $package);
             $response['payment_url'] = $paymentUrl;
             $response['payment_instructions'] = 'يرجى إكمال عملية الدفع لتفعيل الاشتراك';
@@ -89,22 +97,40 @@ class PackageController extends Controller
     
     private function generatePaymentUrl($subscription, $package): string
     {
-        // مثال لبوابة دفع (PayPal, Stripe, فوري, إلخ)
+        // PayTabs API Integration
         $paymentData = [
-            'amount' => $package->price,
-            'currency' => 'SAR',
-            'description' => 'اشتراك في باقة: ' . $package->name,
-            'subscription_id' => $subscription->id,
-            'success_url' => url('/api/payment/success/' . $subscription->id),
-            'cancel_url' => url('/api/payment/cancel/' . $subscription->id),
-            'webhook_url' => url('/api/payment/callback'),
+            'profile_id' => config('paytabs.profile_id'),
+            'tran_type' => 'sale',
+            'tran_class' => 'ecom',
+            'cart_id' => 'subscription_' . $subscription->id,
+            'cart_description' => 'اشتراك في باقة: ' . $package->name,
+            'cart_currency' => 'SAR',
+            'cart_amount' => $package->price,
+            'callback' => url('/api/payment/callback'),
+            'return' => url('/api/payment/success/' . $subscription->id),
+            'customer_details' => [
+                'name' => auth()->user()->name,
+                'email' => auth()->user()->email,
+                'phone' => auth()->user()->phone ?? '966500000000',
+                'street1' => 'N/A',
+                'city' => 'Riyadh',
+                'state' => 'Riyadh',
+                'country' => 'SA',
+                'zip' => '12345'
+            ]
         ];
         
-        // هنا تضع كود بوابة الدفع الخاصة بك
-        // مثال لفوري:
-        return 'https://api.moyasar.com/v1/payments?' . http_build_query($paymentData);
+        // إرسال طلب لPayTabs لإنشاء رابط الدفع
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => config('paytabs.server_key'),
+            'Content-Type' => 'application/json'
+        ])->post('https://secure.paytabs.sa/payment/request', $paymentData);
         
-        // أو مثال لPayPal:
-        // return 'https://www.paypal.com/cgi-bin/webscr?' . http_build_query($paymentData);
+        if ($response->successful()) {
+            return $response->json('redirect_url');
+        }
+        
+        // Fallback URL في حالة فشل الطلب
+        return url('/payment/error');
     }
 }
