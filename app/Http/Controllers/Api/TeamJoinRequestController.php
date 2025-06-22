@@ -23,12 +23,21 @@ class TeamJoinRequestController extends Controller
                 return response()->json(['message' => 'عدد كبير من الطلبات. يرجى المحاولة لاحقاً.'], 429);
             }
             
-            // فحص عدم دعوة نفسه
-            if ($request->email === auth()->user()->email) {
+            $invitedUser = User::where('email', $request->email)->first();
+            
+            if (!$invitedUser) {
+                return response()->json(['message' => 'المستخدم غير موجود'], 422);
+            }
+            
+            // فحص عدم دعوة نفسه بالـ ID
+            if ($invitedUser->id === auth()->id()) {
                 return response()->json(['message' => 'لا يمكنك دعوة نفسك'], 422);
             }
             
-            $invitedUser = User::where('email', $request->email)->first();
+            // فحص إضافي: منع دعوة نفس الشخص حتى لو كان في فريق آخر
+            if ($invitedUser->email === auth()->user()->email) {
+                return response()->json(['message' => 'لا يمكنك دعوة نفسك'], 422);
+            }
             $team = auth()->user()->ownedTeams()->first();
             
             // إنشاء فريق تلقائي إذا لم يكن موجود
@@ -160,5 +169,67 @@ class TeamJoinRequestController extends Controller
             'message' => 'تم جلب الطلبات المرسلة إليك بنجاح',
             'data' => new JoinRequestCollection($requests)
         ])->setMaxAge(300)->setPublic();
+    }
+    
+    public function updateStatus(Request $request): JsonResponse
+    {
+        $joinRequest = JoinRequest::find($request->input('id'));
+        
+        if (!$joinRequest) {
+            return response()->json(['message' => 'الطلب غير موجود'], 404);
+        }
+        
+        // التحقق من أن المستخدم الحالي هو المدعو
+        if ($joinRequest->user_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك'], 403);
+        }
+
+        if ($joinRequest->status !== 'pending') {
+            return response()->json(['message' => 'لا يمكن تعديل هذا الطلب'], 400);
+        }
+
+        $status = $request->input('status');
+        if (!in_array($status, ['accepted', 'rejected'])) {
+            return response()->json(['message' => 'حالة غير صحيحة'], 400);
+        }
+
+        $joinRequest->update(['status' => $status]);
+        
+        Cache::forget('join_requests_' . $joinRequest->user_id);
+        Cache::forget('received_requests_' . $joinRequest->team->owner_id);
+
+        if ($status === 'accepted') {
+            $joinRequest->team->members()->attach($joinRequest->user_id);
+            $message = 'تم قبول الطلب وإضافة العضو للفريق';
+        } else {
+            $message = 'تم رفض الطلب';
+        }
+
+        return response()->json([
+            'message' => $message,
+            'data' => new JoinRequestResource($joinRequest->load(['team:id,name', 'user:id,name,email']))
+        ]);
+    }
+    
+    public function deleteRequest(Request $request): JsonResponse
+    {
+        $joinRequest = JoinRequest::find($request->input('id'));
+        
+        if (!$joinRequest) {
+            return response()->json(['message' => 'الطلب غير موجود'], 404);
+        }
+        
+        // المرسل يمكنه حذف طلبه
+        if ($joinRequest->user_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك'], 403);
+        }
+        
+        // تنظيف cache قبل الحذف
+        Cache::forget('join_requests_' . $joinRequest->user_id);
+        Cache::forget('received_requests_' . $joinRequest->team->owner_id);
+
+        $joinRequest->delete();
+
+        return response()->json(['message' => 'تم حذف الطلب بنجاح']);
     }
 }

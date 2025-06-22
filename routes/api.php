@@ -4,6 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TeamJoinRequestController;
+use App\Http\Controllers\Api\TeamController;
+use App\Http\Controllers\Api\PackageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -39,7 +41,22 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/join-requests', [TeamJoinRequestController::class, 'index']); // طلباتي المرسلة - مع cache
     Route::get('/join-requests/received', [TeamJoinRequestController::class, 'received']); // طلبات مرسلة لي - مع cache
     Route::patch('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'update']); // قبول/رفض
+    Route::post('/join-requests/update-status', [TeamJoinRequestController::class, 'updateStatus']); // قبول/رفض باستخدام POST
     Route::delete('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'destroy']); // حذف
+    Route::post('/join-requests/delete', [TeamJoinRequestController::class, 'deleteRequest']); // حذف باستخدام POST
+
+    // Team Management - إدارة الفرق
+    Route::get('/my-team', [TeamController::class, 'myTeam']); // عرض فريقي
+    Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
+
+    // Packages & Subscriptions - الباقات والاشتراكات
+    Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات
+    Route::post('/subscribe', [PackageController::class, 'subscribe']); // الاشتراك في باقة
+    
+    // Payment Callbacks - استقبال نتائج الدفع
+    Route::post('/payment/callback', [\App\Http\Controllers\Api\PaymentController::class, 'callback']); // webhook من بوابة الدفع
+    Route::get('/payment/success/{subscription}', [\App\Http\Controllers\Api\PaymentController::class, 'success']); // نجح الدفع
+    Route::get('/payment/cancel/{subscription}', [\App\Http\Controllers\Api\PaymentController::class, 'cancel']); // إلغاء الدفع
 
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);

@@ -14,6 +14,7 @@ class ListFinancialDetails extends ListRecords
     {
         return [
             Actions\CreateAction::make(),
+            
         ];
     }
 }

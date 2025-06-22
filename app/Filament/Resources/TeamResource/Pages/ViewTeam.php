@@ -111,9 +111,9 @@ class ViewTeam extends ViewRecord
                     
                     // تحقق من عدم استنفاد الباقة
                     $taskLimit = $subscription->package->max_tasks ?? 0;
-                    if ($taskLimit > 0) {
+                    if ($taskLimit > 0 && $subscription->start_date) {
                         $currentTaskCount = \App\Models\Task::where('creator_id', $user->id)
-                            ->where('created_at', '>=', $subscription->start_date)
+                            ->where('created_at', '>=', \Carbon\Carbon::parse($subscription->start_date))
                             ->count();
                         if ($currentTaskCount >= $taskLimit) {
                             return false;
@@ -167,7 +167,7 @@ class ViewTeam extends ViewRecord
                         
                     redirect()->route('filament.admin.pages.dashboard');
                 })
-                ->visible(fn() => $this->record->members->contains('id', auth()->id())),
+                ->visible(fn() => $this->record->members->pluck('id')->contains(auth()->id())),
         ];
     }
 

@@ -43,7 +43,7 @@ class FinancialDetailResource extends Resource
 
     public static function canCreate(): bool
     {
-        return false; // لا يمكن الإنشاء
+        return auth()->user()?->hasRole('admin');
     }
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
@@ -124,8 +124,8 @@ class FinancialDetailResource extends Resource
     {
         return [
             'index' => Pages\ListFinancialDetails::route('/'),
+            'create' => Pages\CreateFinancialDetail::route('/create'),
             'edit' => Pages\EditFinancialDetail::route('/{record}/edit'),
-            // لا توجد صفحة إنشاء
         ];
     }
 }
