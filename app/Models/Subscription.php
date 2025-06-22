@@ -32,8 +32,7 @@ class Subscription extends Model
         'previous_rewards_amount' => 'decimal:2',
     ];
 
-    // تحسين الأداء بإضافة العلاقات المستخدمة بشكل متكرر
-    protected $with = ['package'];
+   
 
     // إضافة نطاق للاشتراكات النشطة لتحسين الاستعلامات المتكررة
     public function scopeActive(Builder $query): Builder

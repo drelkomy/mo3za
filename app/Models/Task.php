@@ -35,9 +35,7 @@ class Task extends Model implements HasMedia
         'selected_members' => 'array',
     ];
 
-    // تحسين الأداء بإضافة العلاقات التي يتم استخدامها بشكل متكرر
-    protected $with = ['creator', 'receiver'];
-
+    
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'creator_id');

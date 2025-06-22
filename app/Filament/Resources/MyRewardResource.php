@@ -44,7 +44,7 @@ class MyRewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['awardedBy'])->where('user_id', auth()->id());
+        return parent::getEloquentQuery()->where('user_id', auth()->id());
     }
 
     public static function table(Table $table): Table

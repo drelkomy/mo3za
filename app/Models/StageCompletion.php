@@ -19,8 +19,7 @@ class StageCompletion extends Model
         'proof_type',
     ];
 
-    // Eager-load frequently accessed relations to avoid N+1
-    protected $with = ['stage', 'user'];
+ 
 
     /**
      * Get the stage that this completion belongs to.

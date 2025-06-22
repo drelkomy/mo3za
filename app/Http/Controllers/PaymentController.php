@@ -96,9 +96,12 @@ class PaymentController extends Controller
         try {
             // سجل بيانات الـ callback للتحقق
             Log::info('PayTabs callback received', [
+                'method' => $request->method(),
                 'data' => $request->all(),
+                'headers' => $request->headers->all(),
                 'ip' => $request->ip(),
-                'package_id' => $request->get('package_id')
+                'raw_content' => $request->getContent(),
+                'content_type' => $request->header('Content-Type')
             ]);
 
             // Get package ID from request

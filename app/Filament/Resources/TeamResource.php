@@ -62,8 +62,7 @@ class TeamResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()
-            ->with(['owner', 'members']);
+        $query = parent::getEloquentQuery();
 
         // إذا لم يكن المستخدم أدمن، قيّد النتائج على فرقه فقط
         if (! auth()->user()?->hasRole('admin')) {

@@ -21,8 +21,7 @@ class Reward extends Model
         'updated_at' => 'datetime',
     ];
 
-    // تحسين الأداء بإضافة العلاقات المستخدمة بشكل متكرر
-    protected $with = ['giver', 'receiver'];
+  
 
     // إضافة فهارس للبحث السريع
     protected static function boot()

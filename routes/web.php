@@ -6,98 +6,86 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentRedirectController;
 use App\Http\Controllers\InvitationController;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| All routes related to payments and subscriptions
-|
-*/
-
 Route::get('/', fn () => redirect('/admin'));
 
 Route::get('/login', fn () => redirect('/admin/login'))->name('login');
 
+// تحميل الملفات المرفقة
 Route::get('/download-attachment/{path}', function ($path) {
     $filePath = storage_path('app/public/' . $path);
-    
+
     if (!file_exists($filePath)) {
         abort(404, 'File not found: ' . $path);
     }
-    
+
     return response()->download($filePath);
 })->middleware('auth')->name('download.attachment')->where('path', '.*');
 
 // --------------------------
-// Payment Routes (UI-based)
+// Payment Routes (UI)
 // --------------------------
-Route::match(['get', 'post'], '/payment/pay', [PaymentController::class, 'pay'])
-    ->name('payment.pay');
-
+Route::match(['get', 'post'], '/payment/pay', [PaymentController::class, 'pay'])->name('payment.pay');
 
 // --------------------------
-// PayTabs Integration Routes
+// PayTabs Integration
 // --------------------------
-Route::prefix('paytabs')->name('paytabs.')->group(function () {
+Route::prefix('paytabs')->name('paytabs.')->middleware(['throttle:60,1'])->group(function () {
 
-    // إنشاء صفحة دفع جديدة
+    // إنشاء عملية دفع
     Route::post('/create-payment', [PaymentController::class, 'createPayment'])
+        ->middleware(['throttle:10,1'])
         ->name('create.payment');
 
-    // استقبال Callback من PayTabs (POST و GET)
-    Route::match(['post', 'get'], '/callback', [PaymentController::class, 'callback'])
-        ->name('callback');
+    // استقبال Callback من PayTabs - مسارات متعددة
+    Route::match(['get', 'post'], '/callback', [PaymentController::class, 'callback'])
+        ->name('callback')
+        ->withoutMiddleware(['web', 'csrf']);
+    
+    Route::match(['get', 'post'], '/webhook', [PaymentController::class, 'callback'])
+        ->name('webhook')
+        ->withoutMiddleware(['web', 'csrf']);
 
-    // التوجيه بعد الدفع (نجاح - فشل - إلغاء)
+    // مسارات النجاح / الفشل / الإلغاء
     Route::get('/success', [PaymentController::class, 'success'])->name('success');
     Route::get('/failed', [PaymentController::class, 'failed'])->name('failed');
     Route::get('/cancel', [PaymentController::class, 'cancel'])->name('cancel');
 
-    // تفعيل الدفع بعد النجاح (للتطوير المحلي فقط)
+    // التحقق من حالة الدفع - محدود الطلبات
+    Route::match(['get', 'post'], '/check-status', [PaymentController::class, 'checkPaymentStatus'])
+        ->middleware(['throttle:30,1'])
+        ->name('check.status');
+    
+    // فحص دوري لحالة الدفع
+    Route::get('/verify/{transaction_ref}', [PaymentController::class, 'verifyPayment'])
+        ->middleware(['throttle:20,1'])
+        ->name('verify');
+
+    // لتفعيل الدفع يدويًا في بيئة التطوير فقط
     if (app()->environment('local')) {
-        Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])
-            ->name('activate');
+        Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])->name('activate');
+        Route::get('/process-payment/{order_id}', [PaymentController::class, 'processLocalPayment'])->name('process.local');
     }
 
-    // التحقق من حالة الدفع
-    Route::match(['get', 'post'], '/check-status', [PaymentController::class, 'checkPaymentStatus'])
-        ->name('check.status');
-
-    // معالجة الدفع يدوياً (مفيد للبيئة المحلية)
-    Route::get('/process-payment/{order_id}', [PaymentController::class, 'processLocalPayment'])
-        ->name('process.local');
-
-    // صفحة مؤقتة لعرض نتيجة الدفع مع إعادة التوجيه تلقائياً
+    // صفحة مؤقتة تعرض نتيجة الدفع وتقوم بإعادة التوجيه تلقائيًا
     Route::get('/result-redirect', function (Request $request) {
         $tranRef = $request->get('tranRef');
         $redirectUrl = route('paytabs.success', ['tranRef' => $tranRef]);
         return view('payment.result-redirect', ['redirectUrl' => $redirectUrl]);
     })->name('result.redirect');
 
-    // معالجة إعادة التوجيه اليدوي
-    Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])
-        ->name('payment.redirect');
+    // دعم إعادة التوجيه من PayTabs إذا كانت غير مباشرة
+    Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])->name('payment.redirect');
 });
 
-// مسار خارجي مختصر لإعادة التوجيه
-Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])
-    ->name('payment.redirect');
+// إعادة التوجيه المختصر في حالة طلب خارجي
+Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])->name('payment.redirect');
 
 // --------------------------
 // Invitation Routes
 // --------------------------
 Route::prefix('invitations')->name('invitations.')->group(function () {
-    // إنشاء دعوة جديدة
     Route::post('/create', [InvitationController::class, 'create'])->name('create');
-    
-    // عرض صفحة قبول الدعوة
     Route::get('/{token}', [InvitationController::class, 'show'])->name('show');
-    
-    // قبول الدعوة
     Route::post('/{token}/accept', [InvitationController::class, 'accept'])->name('accept');
-    
-    // رفض الدعوة
     Route::get('/{token}/reject', [InvitationController::class, 'reject'])->name('reject');
-
 });

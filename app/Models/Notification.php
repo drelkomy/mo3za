@@ -22,7 +22,6 @@ class Notification extends Model
     ];
 
     // Eager-load user to avoid N+1 when listing notifications
-    protected $with = ['user'];
 
     public function user(): BelongsTo
     {

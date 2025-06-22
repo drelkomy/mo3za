@@ -22,11 +22,16 @@ class JoinRequestResource extends JsonResource
                 'id' => $this->whenLoaded('team', fn() => $this->team->id),
                 'name' => $this->whenLoaded('team', fn() => $this->team->name),
             ],
-            'user' => [
-                'id' => $this->whenLoaded('user', fn() => $this->user->id),
-                'name' => $this->whenLoaded('user', fn() => $this->user->name),
-                'email' => $this->whenLoaded('user', fn() => $this->user->email),
-            ],
+            'user' => $this->when($this->relationLoaded('user'), [
+                'id' => $this->user?->id,
+                'name' => $this->user?->name,
+                'email' => $this->user?->email,
+            ]),
+            'inviter' => $this->when($this->relationLoaded('team') && $this->team?->relationLoaded('owner'), [
+                'id' => $this->team?->owner?->id,
+                'name' => $this->team?->owner?->name,
+                'email' => $this->team?->owner?->email,
+            ]),
         ];
     }
 }

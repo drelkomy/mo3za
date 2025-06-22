@@ -56,7 +56,7 @@ class RewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['giver', 'receiver', 'task']);
+        $query = parent::getEloquentQuery();
         
         if (!auth()->user()?->hasRole('admin')) {
             // عرض المكافآت التي منحها الشخص فقط

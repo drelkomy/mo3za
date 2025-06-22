@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -124,7 +125,12 @@ class AuthController extends Controller
 
         // Handle avatar upload
         if ($request->hasFile('avatar')) {
-            // Store the file and update the user's avatar_url directly
+            // Delete old avatar if exists
+            if ($user->avatar_url && Storage::disk('public')->exists($user->avatar_url)) {
+                Storage::disk('public')->delete($user->avatar_url);
+            }
+            
+            // Store the new file
             $path = $request->file('avatar')->store('avatars', 'public');
             $user->avatar_url = $path;
 

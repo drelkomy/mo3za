@@ -40,7 +40,7 @@ class PaymentResource extends Resource
     
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['user', 'package']);
+        $query = parent::getEloquentQuery();
 
         if (!auth()->user()?->hasRole('admin')) {
             $query->where('user_id', auth()->id());

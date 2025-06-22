@@ -39,7 +39,7 @@ class SubscriptionResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['user', 'package']);
+        $query = parent::getEloquentQuery();
 
         if (!Auth::user()->hasRole('admin')) {
             $query->where('user_id', Auth::id());

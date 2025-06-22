@@ -24,7 +24,7 @@ class FinancialDetail extends Model
     ];
 
     // Eager-load user to avoid N+1 when accessing financial details with owner
-    protected $with = ['user'];
+
 
     /**
      * Get the user that owns the financial details.

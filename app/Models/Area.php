@@ -20,7 +20,7 @@ class Area extends Model
     ];
 
     // Eager-load frequently used relation to prevent N+1 when listing areas with their cities
-    protected $with = ['cities'];
+   
 
     /**
      * المدن التابعة للمنطقة

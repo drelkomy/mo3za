@@ -22,7 +22,7 @@ class Payment extends Model
     ];
 
     // Eager-load frequently used relations to avoid N+1
-    protected $with = ['user', 'package'];
+    
 
     public function user(): BelongsTo
     {

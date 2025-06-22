@@ -22,9 +22,7 @@ class Team extends Model
         'updated_at' => 'datetime',
     ];
 
-    // تحسين الأداء بإضافة العلاقات المستخدمة بشكل متكرر
-    protected $with = ['owner'];
-
+    
     // إضافة نطاقات للاستعلامات المتكررة
     public function scopeActive(Builder $query): Builder
     {

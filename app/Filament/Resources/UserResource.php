@@ -24,8 +24,7 @@ class UserResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['area', 'city'])
-            ->withCount(['teams', 'createdTasks', 'subscriptions']);
+            ->with(['area', 'city']);
     }
 
     public static function shouldRegisterNavigation(): bool

@@ -24,7 +24,6 @@ class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     }
 }

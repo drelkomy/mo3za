@@ -49,6 +49,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar,
         'is_active' => 'boolean',
     ];
 
+   
+
     protected static function boot()
     {
         parent::boot();
@@ -152,16 +154,19 @@ class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar,
      */
     public function activeSubscription(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(Subscription::class)->ofMany([
-            'created_at' => 'max',
-        ], function ($query) {
-            $query->where('status', 'active');
-        });
+        return $this->hasOne(Subscription::class)
+            ->where('status', 'active')
+            ->latest('created_at');
     }
 
     public function hasActiveSubscription(): bool
     {
-        return $this->activeSubscription()->exists();
+        // استخدام cache للاستعلامات المتكررة
+        return cache()->remember(
+            "user_{$this->id}_has_active_subscription",
+            300, // 5 دقائق
+            fn() => $this->activeSubscription()->exists()
+        );
     }
 
     public function canAddTasks(): bool

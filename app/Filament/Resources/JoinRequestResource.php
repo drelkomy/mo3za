@@ -183,7 +183,6 @@ class JoinRequestResource extends Resource
 
         if ($user->hasRole('admin')) {
             return parent::getEloquentQuery()
-                ->with(['user:id,name,email', 'team:id,name,owner_id'])
                 ->latest();
         }
 
@@ -195,7 +194,6 @@ class JoinRequestResource extends Resource
                           $q->where('owner_id', $user->id); // الطلبات التي أرسلها قائد الفريق
                       });
             })
-            ->with(['user:id,name,email', 'team:id,name,owner_id'])
             ->latest();
     }
 

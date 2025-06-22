@@ -25,7 +25,6 @@ class Invitation extends Model
     ];
 
     // تحسين الأداء بإضافة العلاقات المستخدمة بشكل متكرر
-    protected $with = ['team', 'sender'];
 
     // إضافة نطاقات للاستعلامات المتكررة
     public function scopePending(Builder $query): Builder

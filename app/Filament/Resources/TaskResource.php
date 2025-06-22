@@ -71,7 +71,7 @@ class TaskResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['receiver', 'creator', 'stages', 'rewards']);
+        $query = parent::getEloquentQuery();
         
         if (auth()->check() && !auth()->user()->hasRole('admin')) {
             // عرض المهام التي أنشأها الشخص فقط
