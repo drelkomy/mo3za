@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Cache;
 
 class TeamController extends Controller
 {
-    public function myTeam(): JsonResponse
+    public function myTeam(Request $request): JsonResponse
     {
         $cacheKey = 'my_owned_team_' . auth()->id();
         
@@ -31,9 +31,41 @@ class TeamController extends Controller
             ]);
         }
         
+        // تطبيق pagination على الأعضاء
+        $page = $request->input('page', 1);
+        $perPage = $request->input('per_page', 10);
+        
+        $membersCacheKey = 'team_members_' . $team->id . '_page_' . $page . '_' . $perPage;
+        
+        $membersData = Cache::remember($membersCacheKey, 300, function () use ($team, $page, $perPage) {
+            $members = $team->members()
+                ->select(['users.id', 'users.name', 'users.email'])
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
+                ->get();
+                
+            $total = $team->members()->count();
+            
+            return [
+                'members' => $members,
+                'total' => $total,
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'last_page' => ceil($total / $perPage)
+            ];
+        });
+        
+        $teamData = new TeamResource($team);
+        $teamData->additional['members_meta'] = [
+            'total' => $membersData['total'],
+            'current_page' => $membersData['current_page'],
+            'per_page' => $membersData['per_page'],
+            'last_page' => $membersData['last_page']
+        ];
+        
         return response()->json([
             'message' => 'تم جلب فريقك الذي تملكه بنجاح',
-            'data' => new TeamResource($team)
+            'data' => $teamData
         ])->setMaxAge(300)->setPublic();
     }
     

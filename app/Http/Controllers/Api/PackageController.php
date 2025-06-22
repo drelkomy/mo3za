@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SubscribePackageRequest;
 use App\Http\Resources\PackageResource;
-use App\Http\Resources\PackageCollection;
 use App\Models\Package;
 use App\Models\Subscription;
 use Illuminate\Http\JsonResponse;
@@ -16,29 +15,44 @@ class PackageController extends Controller
 {
     public function index(): JsonResponse
     {
-        $cacheKey = 'packages_list';
-        
-        $packages = Cache::remember($cacheKey . '_' . auth()->id(), 600, function () {
-            $query = Package::where('is_active', true)
-                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial']);
-            
-            // إخفاء الباقة التجريبية إذا استخدمها المستخدم من قبل
-            $hasUsedTrial = auth()->user()->subscriptions()
-                ->whereHas('package', function($q) {
-                    $q->where('is_trial', true);
-                })->exists();
-                
-            if ($hasUsedTrial) {
-                $query->where('is_trial', false);
-            }
-            
-            return $query->orderBy('price')->get();
+        $packages = Cache::remember('paid_packages', 600, function () {
+            return Package::where('is_active', true)
+                ->where('is_trial', false)
+                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial'])
+                ->orderBy('price')
+                ->get();
         });
         
         return response()->json([
             'message' => 'تم جلب الباقات بنجاح',
-            'data' => new PackageCollection($packages)
+            'data' => PackageResource::collection($packages)
         ])->setMaxAge(600)->setPublic();
+    }
+    
+    public function trial(): JsonResponse
+    {
+        // فحص إذا استخدم المستخدم الباقة التجريبية من قبل
+        $hasUsedTrial = auth()->user()->subscriptions()
+            ->whereHas('package', function($q) {
+                $q->where('is_trial', true);
+            })->exists();
+            
+        if ($hasUsedTrial) {
+            return response()->json([
+                'message' => 'لقد استخدمت الباقة التجريبية من قبل',
+                'trial_package' => null
+            ], 422);
+        }
+        
+        $trialPackage = Package::where('is_active', true)
+            ->where('is_trial', true)
+            ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial'])
+            ->first();
+            
+        return response()->json([
+            'message' => 'الباقة التجريبية متاحة',
+            'trial_package' => $trialPackage ? new PackageResource($trialPackage) : null
+        ]);
     }
     
     public function subscribe(SubscribePackageRequest $request): JsonResponse
@@ -50,17 +64,17 @@ class PackageController extends Controller
         
         $package = Package::find($request->input('package_id'));
         
-        // فحص الاشتراك النشط
-        $activeSubscription = auth()->user()->subscriptions()
-            ->where('status', 'active')
+        // فحص وجود اشتراك نشط أو معلق
+        $existingSubscription = auth()->user()->subscriptions()
+            ->whereIn('status', ['active', 'pending'])
             ->first();
             
-        if ($activeSubscription) {
+        if ($existingSubscription) {
             return response()->json([
-                'message' => 'لديك اشتراك نشط بالفعل',
+                'message' => 'لديك اشتراك بالفعل',
                 'current_subscription' => [
-                    'package_name' => $activeSubscription->package->name,
-                    'status' => $activeSubscription->status
+                    'package_name' => $existingSubscription->package->name,
+                    'status' => $existingSubscription->status
                 ]
             ], 422);
         }
@@ -85,7 +99,7 @@ class PackageController extends Controller
             'status' => $subscription->status
         ];
         
-        // إضافة رابط الدفع للباقات الحقيقية (غير التجريبية)
+        // إضافة رابط الدفع للباقات المدفوعة
         if (!$package->is_trial && $package->price > 0) {
             $paymentUrl = $this->generatePaymentUrl($subscription, $package);
             $response['payment_url'] = $paymentUrl;
@@ -97,7 +111,6 @@ class PackageController extends Controller
     
     private function generatePaymentUrl($subscription, $package): string
     {
-        // PayTabs API Integration
         $paymentData = [
             'profile_id' => config('paytabs.profile_id'),
             'tran_type' => 'sale',
@@ -120,7 +133,6 @@ class PackageController extends Controller
             ]
         ];
         
-        // إرسال طلب لPayTabs لإنشاء رابط الدفع
         $response = \Illuminate\Support\Facades\Http::withHeaders([
             'Authorization' => config('paytabs.server_key'),
             'Content-Type' => 'application/json'
@@ -130,7 +142,6 @@ class PackageController extends Controller
             return $response->json('redirect_url');
         }
         
-        // Fallback URL في حالة فشل الطلب
         return url('/payment/error');
     }
 }

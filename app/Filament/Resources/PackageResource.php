@@ -64,6 +64,9 @@ class PackageResource extends Resource
                     ->label('الحد الأقصى للمراحل لكل مهمة')
                     ->numeric()
                     ->required(),
+                Forms\Components\Toggle::make('is_trial')
+                    ->label('باقة تجريبية')
+                    ->default(false),
                 Forms\Components\Toggle::make('is_active')
                     ->label('نشط')
                     ->default(true),
@@ -89,6 +92,9 @@ class PackageResource extends Resource
                     ->label('المراحل/مهمة')
                     ->numeric()
                     ->sortable(),
+                Tables\Columns\IconColumn::make('is_trial')
+                    ->label('تجريبية')
+                    ->boolean(),
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('نشط'),
                 Tables\Columns\TextColumn::make('created_at')
@@ -98,6 +104,8 @@ class PackageResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\TernaryFilter::make('is_trial')
+                    ->label('تجريبية'),
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('نشط'),
             ])

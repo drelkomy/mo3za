@@ -50,8 +50,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
 
     // Packages & Subscriptions - الباقات والاشتراكات
-    Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات
+    Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات المدفوعة
+    Route::get('/trial-package', [PackageController::class, 'trial']); // عرض الباقة التجريبية
     Route::post('/subscribe', [PackageController::class, 'subscribe']); // الاشتراك في باقة
+    
+    // Payment History - تاريخ المدفوعات
+    Route::get('/payments', [\App\Http\Controllers\Api\PaymentHistoryController::class, 'index']); // عرض تاريخ المدفوعات
+    
+    // Subscription Management - إدارة الاشتراكات
+    Route::get('/subscriptions', [\App\Http\Controllers\Api\SubscriptionController::class, 'index']); // عرض الاشتراكات
+    Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']); // إلغاء اشتراك
     
     // Payment Callbacks - استقبال نتائج الدفع
     Route::post('/payment/callback', [\App\Http\Controllers\Api\PaymentController::class, 'callback']); // webhook من بوابة الدفع
