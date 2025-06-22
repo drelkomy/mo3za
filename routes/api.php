@@ -46,7 +46,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/join-requests/delete', [TeamJoinRequestController::class, 'deleteRequest']); // حذف باستخدام POST
 
     // Team Management - إدارة الفرق
+    Route::post('/team/create', [TeamController::class, 'create']); // إنشاء فريق
     Route::get('/my-team', [TeamController::class, 'myTeam']); // عرض فريقي
+    Route::post('/team/update-name', [TeamController::class, 'updateName']); // تعديل اسم الفريق
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
 
     // Packages & Subscriptions - الباقات والاشتراكات
