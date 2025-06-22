@@ -41,6 +41,12 @@ class AuthController extends Controller
             ]);
         }
 
+        // تحميل الاشتراكات والباقات
+        $user->load([
+            'subscriptions.package',
+            'createdTasks'
+        ]);
+        
         // إنشاء رمز وصول جديد
         $token = $user->createToken('api-token')->plainTextToken;
 
@@ -76,7 +82,11 @@ class AuthController extends Controller
         $cacheKey = 'user_me_' . $request->user()->id;
         
         $userData = Cache::remember($cacheKey, 600, function () use ($request) {
-            return new UserResource($request->user());
+            $user = $request->user()->load([
+                'subscriptions.package',
+                'createdTasks'
+            ]);
+            return new UserResource($user);
         });
         
         return response()->json([

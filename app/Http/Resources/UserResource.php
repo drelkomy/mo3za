@@ -14,6 +14,10 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // الحصول على الاشتراك النشط
+        $activeSubscription = $this->subscriptions()->where('status', 'active')->first();
+        $createdTasksCount = $this->createdTasks()->count();
+        
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -21,11 +25,19 @@ class UserResource extends JsonResource
             'user_type' => $this->user_type,
             'is_active' => $this->is_active,
           
+            // معلومات الاشتراك والباقة
+            'subscription' => $activeSubscription ? [
+                'id' => $activeSubscription->id,
+                'package_name' => $activeSubscription->package->name,
+                'package_type' => $activeSubscription->package->is_trial ? 'تجريبية' : 'مدفوعة',
+                'status' => $activeSubscription->status,
+                'max_tasks' => $activeSubscription->package->max_tasks,
+                'created_tasks_count' => $createdTasksCount,
+                'remaining_tasks' => max(0, $activeSubscription->package->max_tasks - $createdTasksCount),
+                'is_exhausted' => $createdTasksCount >= $activeSubscription->package->max_tasks,
+            ] : null,
             
-            // معلومات إضافية
-            'has_active_subscription' => $this->whenLoaded('subscriptions', function () {
-                return $this->hasActiveSubscription();
-            }),
+            'has_active_subscription' => $activeSubscription !== null,
             
             // العلاقات
             'owned_teams' => $this->whenLoaded('ownedTeams', function () {
