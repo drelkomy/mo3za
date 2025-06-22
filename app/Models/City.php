@@ -21,6 +21,9 @@ class City extends Model
         'is_active' => 'boolean',
     ];
 
+    // Eager-load area to avoid N+1 when listing cities with their area name
+    protected $with = ['area'];
+
     /**
      * المنطقة التي تنتمي إليها المدينة
      */

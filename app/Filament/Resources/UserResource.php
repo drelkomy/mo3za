@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
+use App\Models\City;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -16,6 +17,16 @@ class UserResource extends Resource
     protected static ?string $model = User::class;
     protected static ?string $navigationIcon = 'heroicon-o-users';
     protected static ?int $navigationSort = 1;
+
+    /**
+     * تحسين الأداء بتحميل العلاقات والعدادات مسبقاً
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with(['area', 'city'])
+            ->withCount(['teams', 'createdTasks', 'subscriptions']);
+    }
 
     public static function shouldRegisterNavigation(): bool
     {
@@ -47,7 +58,8 @@ class UserResource extends Resource
                             ->label('الصورة الشخصية')
                             ->avatar()
                             ->image()
-                            ->directory('avatars'),
+                            ->directory('avatars')
+                            ->columnSpanFull(),
                         Forms\Components\TextInput::make('name')
                             ->label('الاسم')
                             ->required()
@@ -78,10 +90,33 @@ class UserResource extends Resource
                             ])
                             ->default('member')
                             ->required()
-                            ->native(false),
+                            ->native(false)
+                            ->disabled(fn ($record) => $record && $record->id === auth()->id()),
                         Forms\Components\Toggle::make('is_active')
                             ->label('نشط')
                             ->default(true),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('الموقع الجغرافي')
+                    ->schema([
+                        Forms\Components\Select::make('area_id')
+                            ->label('المنطقة')
+                            ->relationship('area', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->reactive()
+                            ->required(),
+                        Forms\Components\Select::make('city_id')
+                            ->label('المدينة')
+                            ->relationship(
+                                name: 'city',
+                                titleAttribute: 'name',
+                                modifyQueryUsing: fn (Builder $query, callable $get) => $query->where('area_id', $get('area_id')),
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->disabled(fn (callable $get) => ! $get('area_id')),
                     ])->columns(2),
 
                 Forms\Components\Section::make('معلومات إضافية')
@@ -102,9 +137,10 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\ImageColumn::make('avatar_url')
+                Tables\Columns\ImageColumn::make('avatar')
                     ->label('الصورة')
-                    ->circular(),
+                    ->circular()
+                    ->getStateUsing(fn (User $record): ?string => $record->getFilamentAvatarUrl()),
                 Tables\Columns\TextColumn::make('name')
                     ->label('الاسم')
                     ->searchable(),
@@ -114,6 +150,14 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('phone')
                     ->label('رقم الهاتف')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('area.name')
+                    ->label('المنطقة')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('city.name')
+                    ->label('المدينة')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('user_type')
                     ->label('نوع المستخدم')
                     ->badge()
@@ -151,7 +195,9 @@ class UserResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function canViewAny(): bool

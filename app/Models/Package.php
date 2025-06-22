@@ -11,7 +11,7 @@ class Package extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 'price', 'max_tasks', 'max_participants', 
+        'name', 'price', 'max_tasks', 
         'max_milestones_per_task', 'is_active'
     ];
 
@@ -19,7 +19,7 @@ class Package extends Model
         'price' => 'decimal:2',
         'is_active' => 'boolean',
         'max_tasks' => 'integer',
-        'max_participants' => 'integer',
+
         'max_milestones_per_task' => 'integer',
     ];
 

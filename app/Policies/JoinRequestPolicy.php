@@ -38,7 +38,38 @@ class JoinRequestPolicy
      */
     public function update(User $user, JoinRequest $joinRequest): bool
     {
+        // Admin can update any join request
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+        
+        // Team owner can update join requests for their team
+        if ($joinRequest->team->owner_id === $user->id) {
+            return true;
+        }
+        
+        // Any team member can update join requests for teams they belong to
+        if ($user->isMemberOf($joinRequest->team)) {
+            return true;
+        }
+        
         return false;
+    }
+    
+    /**
+     * Determine whether the user can approve join requests.
+     */
+    public function approve(User $user, JoinRequest $joinRequest): bool
+    {
+        return $this->update($user, $joinRequest) && $joinRequest->status === 'pending';
+    }
+
+    /**
+     * Determine whether the user can reject join requests.
+     */
+    public function reject(User $user, JoinRequest $joinRequest): bool
+    {
+        return $this->update($user, $joinRequest) && $joinRequest->status === 'pending';
     }
 
     /**
@@ -46,6 +77,26 @@ class JoinRequestPolicy
      */
     public function delete(User $user, JoinRequest $joinRequest): bool
     {
+        // Admin can delete any join request
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+        
+        // Team owner can delete requests for their team
+        if ($joinRequest->team->owner_id === $user->id) {
+            return true;
+        }
+        
+        // Any team member can delete join requests for teams they belong to
+        if ($user->isMemberOf($joinRequest->team)) {
+            return true;
+        }
+        
+        // User can delete their own requests
+        if ($joinRequest->user_id === $user->id) {
+            return true;
+        }
+        
         return false;
     }
 

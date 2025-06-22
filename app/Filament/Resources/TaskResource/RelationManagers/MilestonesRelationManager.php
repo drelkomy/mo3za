@@ -28,9 +28,9 @@ class MilestonesRelationManager extends RelationManager
         $query = parent::getRelationshipQuery();
         $user = auth()->user();
 
-        // If the user is a participant, they should only see their own milestones.
-        if ($user->hasRole('مشارك')) {
-            $query->where('participant_id', $user->id);
+        // If the user is a member, they should only see their own milestones.
+        if ($user->hasRole('member')) {
+            $query->where('member_id', $user->id);
         }
 
         return $query;
@@ -50,12 +50,12 @@ class MilestonesRelationManager extends RelationManager
                     'rejected' => 'danger',
                     default => 'gray',
                 }),
-                Tables\Columns\TextColumn::make('participant.name')
-                    ->label('المشارك')
+                Tables\Columns\TextColumn::make('member.name')
+                    ->label('عضو الفريق')
                     ->default('(غير محدد)')
                     ->searchable()
                     ->sortable()
-                    ->visible(fn () => auth()->user()->hasRole(['داعم', 'مدير نظام'])),
+                    ->visible(fn () => auth()->user()->hasRole('admin') || ($this->getOwnerRecord()->team && auth()->user()->ownsTeam($this->getOwnerRecord()->team))),
                 Tables\Columns\IconColumn::make('proof_file_path')
                     ->label('الإثبات')
                     ->icon('heroicon-o-paper-clip')
@@ -81,8 +81,8 @@ class MilestonesRelationManager extends RelationManager
                         ]);
                     })
                     ->visible(function (Milestone $record): bool {
-                        // Visible only to the assigned participant if the milestone is pending or rejected.
-                        return auth()->id() === $record->participant_id && in_array($record->status, ['pending', 'rejected']);
+                        // Visible only to the assigned member if the milestone is pending or rejected.
+                        return auth()->id() === $record->member_id && in_array($record->status, ['pending', 'rejected']);
                     })
                     ->form([
                         FileUpload::make('proof_file_path')
@@ -102,9 +102,9 @@ class MilestonesRelationManager extends RelationManager
                         DB::transaction(function () use ($record) {
                             $record->update(['status' => 'approved']);
 
-                            // Check if this was the last milestone for this participant in this task
+                            // Check if this was the last milestone for this member in this task
                             $remainingMilestones = Milestone::where('task_id', $record->task_id)
-                                ->where('participant_id', $record->participant_id)
+                                ->where('member_id', $record->member_id)
                                 ->where('status', '!=', 'approved')
                                 ->count();
 
@@ -113,7 +113,7 @@ class MilestonesRelationManager extends RelationManager
                                 $task = $record->task;
                                 if ($task->reward_amount > 0) {
                                     $task->rewards()->create([
-                                        'user_id' => $record->participant_id,
+                                        'user_id' => $record->member_id,
                                         'amount' => $task->reward_amount,
                                         'description' => $task->reward_description ?? 'مكافأة إنجاز المهمة: ' . $task->name,
                                         'type' => 'points',
@@ -123,14 +123,14 @@ class MilestonesRelationManager extends RelationManager
 
                                     Notification::make()
                                         ->title('تم منح المكافأة!')
-                                        ->body('لقد أكمل المشارك ' . $record->participant->name . ' جميع مراحل المهمة بنجاح وحصل على المكافأة.')
+                                        ->body('لقد أكمل عضو الفريق ' . $record->member->name . ' جميع مراحل المهمة بنجاح وحصل على المكافأة.')
                                         ->success()
                                         ->sendToDatabase(auth()->user());
                                 }
                             }
                         });
                     })
-                    ->visible(fn (Milestone $record) => auth()->user()->hasRole('داعم') && $record->status === 'in_review'),
+                    ->visible(fn (Milestone $record) => $record->status === 'in_review' && ($record->task->team && auth()->user()->ownsTeam($record->task->team))),
 
                 Action::make('reject')
                     ->label('رفض')
@@ -146,7 +146,7 @@ class MilestonesRelationManager extends RelationManager
                             'proof_file_path' => null,
                         ]);
                     })
-                    ->visible(fn (Milestone $record): bool => auth()->user()->hasRole('داعم') && $record->status === 'in_review')
+                    ->visible(fn (Milestone $record): bool => $record->status === 'in_review' && ($record->task->team && auth()->user()->ownsTeam($record->task->team)))
                     ->form([
                         Textarea::make('rejection_comment')
                             ->label('سبب الرفض')

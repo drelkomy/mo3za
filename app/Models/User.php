@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasAvatar;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,11 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Models\Task;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Auth\Passwords\CanResetPassword;
 
-class User extends Authenticatable implements FilamentUser, HasMedia
+class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar, \Illuminate\Contracts\Auth\CanResetPassword
 {
     // المنطقة التي ينتمي إليها المستخدم
     public function area()
@@ -28,12 +32,12 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return $this->belongsTo(\App\Models\City::class, 'city_id');
     }
 
-    use HasApiTokens, HasFactory, Notifiable, InteractsWithMedia, HasRoles;
+    use HasApiTokens, HasFactory, Notifiable, InteractsWithMedia, HasRoles, CanResetPassword;
 
     protected $fillable = [
         'name', 'email', 'password', 'phone', 'gender', 'birthdate', 
         'is_active', 'user_type', 'avatar_url',
-        'area_id', 'city_id'
+        'area_id', 'city_id', 'trial_used'
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -50,9 +54,12 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         parent::boot();
 
         static::created(function ($user) {
-            if (!$user->hasRole('admin')) {
-                app(\App\Services\SubscriptionService::class)->createTrialSubscription($user);
+            // Assign role based on user_type upon creation
+            if ($user->user_type === 'member' && !$user->hasRole('member')) {
+                $user->assignRole('member');
             }
+
+
         });
     }
 
@@ -61,9 +68,9 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return true;
     }
 
-    public function getFilamentAvatarUrl(): ?string
+        public function getFilamentAvatarUrl(): ?string
     {
-        return $this->avatar_url ? url('storage/' . $this->avatar_url) : null;
+        return $this->avatar_url ? Storage::url($this->avatar_url) : null;
     }
 
     public function ownedTeams(): HasMany
@@ -76,6 +83,16 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return $this->belongsToMany(Team::class, 'team_members')
             ->withPivot('role')
             ->withTimestamps();
+    }
+
+    public function isOwnerOf(Team $team): bool
+    {
+        return $this->id === $team->owner_id;
+    }
+
+    public function isMemberOf(Team $team): bool
+    {
+        return $team->members()->where('user_id', $this->id)->exists() || $this->isOwnerOf($team);
     }
 
     public function notifications(): HasMany
@@ -91,6 +108,11 @@ class User extends Authenticatable implements FilamentUser, HasMedia
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);
+    }
+
+    public function receivedTasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'receiver_id');
     }
 
     public function createdTasks(): HasMany
@@ -123,38 +145,79 @@ class User extends Authenticatable implements FilamentUser, HasMedia
         return $this->hasMany(JoinRequest::class);
     }
 
-    protected $activeSubscriptionCache = null;
-
-    public function activeSubscription()
+    /**
+     * Get the active subscription for the user.
+     * Returns the most recent active subscription.
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function activeSubscription(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        if ($this->activeSubscriptionCache === null) {
-            $this->activeSubscriptionCache = $this->subscriptions()->where('status', 'active')->latest()->first();
-        }
-        return $this->activeSubscriptionCache;
+        return $this->hasOne(Subscription::class)->ofMany([
+            'created_at' => 'max',
+        ], function ($query) {
+            $query->where('status', 'active');
+        });
     }
-    
+
     public function hasActiveSubscription(): bool
     {
-        return $this->activeSubscription() !== null;
+        return $this->activeSubscription()->exists();
     }
 
     public function canAddTasks(): bool
     {
-        return app(\App\Services\SubscriptionService::class)->canAddTasks($this);
+        $subscription = $this->activeSubscription;
+
+        if (!$subscription || $subscription->isExpired()) {
+            return false;
+        }
+
+        return true;
     }
 
-    public function canAddParticipants(): bool
+    public function canAddTeamMembers(): bool
     {
-        return app(\App\Services\SubscriptionService::class)->canAddParticipants($this);
+        $subscription = $this->activeSubscription;
+
+        if (!$subscription || $subscription->isExpired()) {
+            return false;
+        }
+
+        return true;
     }
 
-    public function incrementTasksCreated(): bool
+    public function canManageTeam(): bool
     {
-        return app(\App\Services\SubscriptionService::class)->incrementTasksCreated($this);
+        if ($this->hasRole('admin')) {
+            return true;
+        }
+
+        $subscription = $this->activeSubscription;
+
+        if (!$subscription || !$subscription->package) {
+            return false;
+        }
+
+        $taskLimit = $subscription->package->task_limit;
+
+        if ($taskLimit == 0) { // 0 means unlimited
+            return true;
+        }
+
+        $currentTaskCount = Task::where('subscription_id', $subscription->id)->count();
+
+        return $currentTaskCount < $taskLimit;
     }
 
-    public function incrementParticipantsCreated(): bool
+
+    public function sendPasswordResetNotification($token)
     {
-        return app(\App\Services\SubscriptionService::class)->incrementParticipantsCreated($this);
+        // Send via queue for better performance
+        $this->notify(new \App\Notifications\ResetPasswordCustom($token));
+        \Illuminate\Support\Facades\Log::info('Password reset notification queued', [
+            'user_id' => $this->id,
+            'email' => $this->email
+        ]);
     }
+
 }

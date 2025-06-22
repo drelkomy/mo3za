@@ -19,7 +19,7 @@ class ProfileResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
-            'avatar_url' => $this->avatar_url ? asset('storage/' . $this->avatar_url) : null,
+            'avatar_url' => $this->avatar_url ? \Illuminate\Support\Facades\Storage::url($this->avatar_url) : null,
             'user_type' => $this->user_type,
             'is_active' => $this->is_active,
             'gender' => $this->gender,
@@ -47,7 +47,7 @@ class ProfileResource extends JsonResource
                     'package_name' => optional($activeSubscription->package)->name,
                     'status' => $activeSubscription->status,
                     'tasks_remaining' => $activeSubscription->max_tasks - $activeSubscription->tasks_created,
-                    'participants_remaining' => $activeSubscription->max_participants - $activeSubscription->participants_created,
+
                 ];
             }),
         ];

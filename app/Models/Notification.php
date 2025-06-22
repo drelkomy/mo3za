@@ -21,6 +21,9 @@ class Notification extends Model
         'read_at' => 'datetime',
     ];
 
+    // Eager-load user to avoid N+1 when listing notifications
+    protected $with = ['user'];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

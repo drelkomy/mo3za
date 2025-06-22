@@ -60,10 +60,6 @@ class PackageResource extends Resource
                     ->label('الحد الأقصى للمهام')
                     ->numeric()
                     ->required(),
-                Forms\Components\TextInput::make('max_participants')
-                    ->label('الحد الأقصى للمشاركين')
-                    ->numeric()
-                    ->required(),
                 Forms\Components\TextInput::make('max_milestones_per_task')
                     ->label('الحد الأقصى للمراحل لكل مهمة')
                     ->numeric()
@@ -87,10 +83,6 @@ class PackageResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('max_tasks')
                     ->label('المهام')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('max_participants')
-                    ->label('المشاركين')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('max_milestones_per_task')

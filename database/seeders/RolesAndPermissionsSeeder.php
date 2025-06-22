@@ -34,6 +34,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'upload proof',
             'approve stage',
             'reject stage',
+            'view join requests', // Added permission to view join requests
         ];
 
         // إنشاء الصلاحيات
@@ -56,6 +57,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'upload proof',
                     'approve stage',
                     'reject stage',
+                    'view join requests', // Assign permission to member
                 ]);
             }
         }

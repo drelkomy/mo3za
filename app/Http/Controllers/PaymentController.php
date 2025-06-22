@@ -98,6 +98,42 @@ class PaymentController extends Controller
             Log::info('PayTabs callback received', [
                 'data' => $request->all(),
                 'ip' => $request->ip(),
+                'package_id' => $request->get('package_id')
+            ]);
+
+            // Get package ID from request
+            $packageId = $request->get('package_id');
+            $amount = $request->get('amount');
+
+            if (!$packageId || !$amount) {
+                throw new \RuntimeException('Missing package_id or amount');
+            }
+
+            // Get user from session
+            $user = auth()->user();
+            if (!$user) {
+                throw new \RuntimeException('User not authenticated');
+            }
+
+            // Verify payment status
+            if ($request->get('status') !== 'success') {
+                throw new \RuntimeException('Payment not successful');
+            }
+
+            // Renew subscription
+            $subscriptionService = app(\App\Services\SubscriptionService::class);
+            $subscription = $subscriptionService->renewSubscription($user, $packageId, $amount);
+
+            if (!$subscription) {
+                throw new \RuntimeException('Failed to renew subscription');
+            }
+
+            // Log successful renewal
+            Log::info('Subscription renewed successfully', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $user->id,
+                'package_id' => $packageId,
+                'amount' => $amount,
                 'environment' => app()->environment()
             ]);
             
@@ -109,7 +145,8 @@ class PaymentController extends Controller
             ]);
             
             // Validate callback
-            if (!$this->payTabsService->validateCallback($request->all())) {
+            // التحقق من صحة الـ callback باستخدام التوقيع الرقمي
+            if (!$this->payTabsService->validateCallback($request->getContent(), $request->header('Signature'))) {
                 Log::error('Invalid callback received', $request->all());
                 return response()->json(['message' => 'Invalid callback'], 400);
             }
@@ -336,9 +373,10 @@ class PaymentController extends Controller
     /**
      * صفحة تنشيط الدفع والعودة للصفحة الرئيسية
      */
-    public function activate(Request $request)
+    public function activate(Request $request, $transaction_ref = null)
     {
-        $transactionRef = $request->get('transaction_ref');
+        // دعم كلٍ من مسار /activate/{transaction_ref} أو باراميتر ?transaction_ref=
+        $transactionRef = $transaction_ref ?? $request->get('transaction_ref');
         
         // تسجيل الوصول إلى صفحة التنشيط
         Log::info('Payment activation page accessed', [
@@ -352,24 +390,28 @@ class PaymentController extends Controller
         
         // التحقق من وجود دفع مرتبط بهذا المرجع
         $payment = Payment::where('transaction_id', $transactionRef)->first();
+        if (!$payment) {
+            // دعم التفعيل باستخدام رقم الطلب بدل مرجع المعاملة
+            $payment = Payment::where('order_id', $transactionRef)->first();
+        }
         
-        if ($payment && $payment->status !== 'completed') {
-            // تحديث حالة الدفع إلى مكتمل إذا لم تكن كذلك
-            $payment->update([
-                'status' => 'completed',
-                'notes' => ($payment->notes ? $payment->notes . PHP_EOL : '') . 'تم تأكيد الدفع من صفحة التنشيط'
-            ]);
-            
-            // إنشاء الاشتراك إذا لم يكن موجوداً
+        if ($payment) {
+            // إذا لم يكن مكتملًا، حدّث الحالة
+            if ($payment->status !== 'completed') {
+                $payment->update([
+                    'status' => 'completed',
+                    'notes' => ($payment->notes ? $payment->notes . PHP_EOL : '') . 'تم تأكيد الدفع من صفحة التنشيط'
+                ]);
+            }
+
+            // أنشئ الاشتراك إن لم يكن موجودًا
             if (!$payment->subscription()->exists() && $payment->package_id) {
                 $this->createSubscriptionFromPayment($payment);
             }
         }
         
-        return view('payment.activate', [
-            'transaction_ref' => $transactionRef,
-            'redirect_url' => url('/app')
-        ]);
+        // لا حاجة لعرض مخصص، أعد توجيه المستخدم للوحة التحكم مع رسالة نجاح
+        return redirect('/admin')->with('success', 'تم تأكيد الدفع بنجاح');
     }
 
     /**
@@ -425,7 +467,7 @@ class PaymentController extends Controller
             $response = $this->payTabsService->createPaymentPage($paymentData);
 
             if ($response['success']) {
-                return redirect()->to($response['payment_url']);
+                return redirect()->away($response['payment_url']);
             }
 
             throw new \RuntimeException($response['message'] ?? 'Failed to create payment');
@@ -553,9 +595,8 @@ class PaymentController extends Controller
                 'status' => 'active',
                 'price_paid' => $payment->amount,
                 'tasks_created' => 0,
-                'participants_created' => 0,
+
                 'max_tasks' => $package->max_tasks,
-                'max_participants' => $package->max_participants,
                 'max_milestones_per_task' => $package->max_milestones_per_task,
                 'start_date' => $startDate,
                 'end_date' => $startDate->copy()->addYear(), // اشتراك لمدة عام - انتهاء الاشتراك لا يؤثر على أعضاء الفريق
@@ -569,7 +610,6 @@ class PaymentController extends Controller
                 'user_id' => $payment->user_id,
                 'start_date' => $startDate->toDateString(),
                 'max_tasks' => $package->max_tasks,
-                'max_participants' => $package->max_participants,
                 'max_milestones_per_task' => $package->max_milestones_per_task
             ]);
 

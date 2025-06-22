@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\SubscriptionResource\Pages;
+use App\Filament\Resources\SubscriptionResource\RelationManagers;
 use App\Models\Subscription;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -10,50 +11,51 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+
+use Illuminate\Support\Facades\Auth;
 
 class SubscriptionResource extends Resource
 {
     protected static ?string $model = Subscription::class;
-    protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';
-    protected static ?string $navigationLabel = 'الاشتراكات';
-    protected static ?int $navigationSort = 4;
-    protected static ?string $label = 'اشتراك';
-    protected static ?string $pluralLabel = 'الاشتراكات';
 
-    public static function canViewAny(): bool
+    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
+    // عرض "الاشتراكات" كعنصر مستقل في القائمة بدون مجموعة
+    protected static ?string $navigationGroup = null;
+
+    // ترتيب الاشتراكات بعد "المدفوعات"
+    protected static ?int $navigationSort = 6;
+
+    protected static ?string $modelLabel = 'الاشتراك';
+
+        protected static ?string $pluralModelLabel = 'الاشتراكات';
+
+    public static function getNavigationLabel(): string
     {
-        return auth()->check();
+        return __('الاشتراكات');
     }
-    
-    public static function canCreate(): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
-    {
-        return auth()->user()?->hasRole('admin');
-    }
-    
+
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
-        
-        if (!auth()->user()?->hasRole('admin')) {
-            $query->where('user_id', auth()->id());
+        $query = parent::getEloquentQuery()->with(['user', 'package']);
+
+        if (!Auth::user()->hasRole('admin')) {
+            $query->where('user_id', Auth::id());
         }
-        
+
         return $query;
     }
-    
-    public static function shouldRegisterNavigation(): bool
+
+    public static function canCreate(): bool
     {
-        return auth()->check();
+        return Auth::user()->hasRole('admin');
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return Auth::user()->hasRole('admin');
     }
 
     public static function form(Form $form): Form
@@ -61,63 +63,32 @@ class SubscriptionResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Select::make('user_id')
-                    ->label('المستخدم')
                     ->relationship('user', 'name')
                     ->searchable()
-                    ->preload()
-                    ->required(),
+                    ->required()
+                    ->disabledOn('edit'),
                 Forms\Components\Select::make('package_id')
-                    ->label('الباقة')
                     ->relationship('package', 'name')
                     ->searchable()
-                    ->preload()
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, callable $set) {
-                        if ($state) {
-                            $package = \App\Models\Package::find($state);
-                            if ($package) {
-                                $set('price_paid', $package->price);
-                                $set('max_tasks', $package->max_tasks);
-                                $set('max_participants', $package->max_participants);
-                                $set('max_milestones_per_task', $package->max_milestones_per_task);
-                            }
-                        }
-                    })
-                    ->required(),
-                Forms\Components\TextInput::make('price_paid')
-                    ->label('المبلغ المدفوع')
-                    ->numeric()
-                    ->disabled()
-                    ->dehydrated(),
-                Forms\Components\TextInput::make('max_tasks')
-                    ->label('الحد الأقصى للمهام')
-                    ->numeric()
-                    ->disabled()
-                    ->dehydrated(),
-                Forms\Components\TextInput::make('max_participants')
-                    ->label('الحد الأقصى للمشاركين')
-                    ->numeric()
-                    ->disabled()
-                    ->dehydrated(),
-                Forms\Components\TextInput::make('max_milestones_per_task')
-                    ->label('الحد الأقصى للمراحل لكل مهمة')
-                    ->numeric()
-                    ->disabled()
-                    ->dehydrated(),
+                    ->required()
+                    ->disabledOn('edit'),
                 Forms\Components\Select::make('status')
-                    ->label('الحالة')
                     ->options([
-                        'active' => 'نشط',
-                        'inactive' => 'غير نشط',
-                        'expired' => 'منتهي',
+                        'active' => 'Active',
+                        'expired' => 'Expired',
+                        'cancelled' => 'Cancelled',
                     ])
-                    ->default('active')
                     ->required(),
-                Forms\Components\Hidden::make('tasks_created')->default(0),
-                Forms\Components\Hidden::make('participants_created')->default(0),
-                Forms\Components\Hidden::make('previous_tasks_completed')->default(0),
-                Forms\Components\Hidden::make('previous_tasks_pending')->default(0),
-                Forms\Components\Hidden::make('previous_rewards_amount')->default(0),
+                Forms\Components\TextInput::make('tasks_created')
+                    ->numeric()
+                    ->readOnly(),
+                Forms\Components\TextInput::make('max_tasks')
+                    ->numeric()
+                    ->readOnly(),
+                Forms\Components\DateTimePicker::make('start_date')
+                    ->readOnly(),
+                Forms\Components\DateTimePicker::make('end_date')
+                    ->readOnly(),
             ]);
     }
 
@@ -126,49 +97,65 @@ class SubscriptionResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('user.name')
-                    ->label('المستخدم')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->visible(fn () => Auth::user()->hasRole('admin')),
                 Tables\Columns\TextColumn::make('package.name')
-                    ->label('الباقة')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('price_paid')
-                    ->label('المبلغ المدفوع')
-                    ->money('SAR')
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'active' => 'success',
+                        'expired' => 'danger',
+                        'cancelled' => 'warning',
+                    })
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('tasks_created')
+                    ->label('Tasks Usage')
+                    ->formatStateUsing(fn ($record) => "{$record->tasks_created} / {$record->max_tasks}")
                     ->sortable(),
-                Tables\Columns\TextColumn::make('remaining_tasks')
-                    ->label('المهام المتبقية')
-                    ->getStateUsing(function ($record) {
-                        $remaining = max(0, $record->max_tasks - $record->tasks_created);
-                        return "{$remaining} / {$record->max_tasks}";
-                    }),
-                Tables\Columns\TextColumn::make('remaining_participants')
-                    ->label('المشاركين المتبقين')
-                    ->getStateUsing(function ($record) {
-                        $remaining = max(0, $record->max_participants - $record->participants_created);
-                        return "{$remaining} / {$record->max_participants}";
-                    }),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('تاريخ الإنشاء')
+                Tables\Columns\TextColumn::make('start_date')
                     ->dateTime()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('end_date')
+                    ->dateTime()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('updated_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
             ])
             ->actions([
+                // Action for admins: edit
                 Tables\Actions\EditAction::make()
-                    ->visible(fn () => auth()->user()->hasRole('admin')),
-                Tables\Actions\DeleteAction::make()
-                    ->visible(fn () => auth()->user()->hasRole('admin')),
+                    ->visible(fn () => Auth::user()->hasRole('admin')),
+
+                // Action for members: cancel subscription
+                Tables\Actions\Action::make('cancel')
+                    ->label(__('إلغاء الاشتراك'))
+                    ->color('danger')
+                    ->icon('heroicon-o-x-circle')
+                    ->requiresConfirmation()
+                    ->visible(fn ($record) => Auth::user()->hasRole('member') && $record->user_id === Auth::id() && $record->status === 'active')
+                    ->action(function ($record) {
+                        $record->update(['status' => 'cancelled']);
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn () => auth()->user()->hasRole('admin')),
+                    Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getRelations(): array

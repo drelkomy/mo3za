@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -15,10 +16,10 @@ class Task extends Model implements HasMedia
 
     protected $fillable = [
         'title', 'description', 'terms', 'comment', 'status', 'progress', 
-        'is_active', 'creator_id', 'receiver_id', 'subscription_id', 
+        'is_active', 'creator_id', 'receiver_id', 'subscription_id', 'team_id',
         'reward_amount', 'reward_description', 'start_date', 'due_date', 
         'completed_at', 'duration_days', 'total_stages', 'priority', 
-        'task_status', 'is_multiple', 'reward_type', 'selected_participants'
+        'task_status', 'is_multiple', 'reward_type', 'selected_members'
     ];
 
     protected $casts = [
@@ -31,7 +32,7 @@ class Task extends Model implements HasMedia
         'duration_days' => 'integer',
         'total_stages' => 'integer',
         'is_multiple' => 'boolean',
-        'selected_participants' => 'array',
+        'selected_members' => 'array',
     ];
 
     // تحسين الأداء بإضافة العلاقات التي يتم استخدامها بشكل متكرر
@@ -94,5 +95,18 @@ class Task extends Model implements HasMedia
         return $this->hasMany(Invitation::class);
     }
 
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
 
+    /**
+     * The members (users) that are assigned to the task.
+     */
+    public function members(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'task_user', 'task_id', 'user_id')
+            ->withPivot('is_primary', 'status', 'completion_percentage', 'notes')
+            ->withTimestamps();
+    }
 }

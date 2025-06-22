@@ -44,7 +44,7 @@ class MyRewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('user_id', auth()->id());
+        return parent::getEloquentQuery()->with(['awardedBy'])->where('user_id', auth()->id());
     }
 
     public static function table(Table $table): Table
@@ -58,7 +58,9 @@ class MyRewardResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-            ]);
+            ])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getPages(): array

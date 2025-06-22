@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StageCompletion extends Model
 {
@@ -18,10 +19,13 @@ class StageCompletion extends Model
         'proof_type',
     ];
 
+    // Eager-load frequently accessed relations to avoid N+1
+    protected $with = ['stage', 'user'];
+
     /**
      * Get the stage that this completion belongs to.
      */
-    public function stage()
+    public function stage(): BelongsTo
     {
         return $this->belongsTo(TaskStage::class, 'task_stage_id');
     }
@@ -29,7 +33,7 @@ class StageCompletion extends Model
     /**
      * Get the user who completed the stage.
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }

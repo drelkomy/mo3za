@@ -17,7 +17,12 @@ class Payment extends Model
         'notes', 'payment_method'
     ];
 
-    protected $casts = ['amount' => 'decimal:2'];
+    protected $casts = [
+        'amount' => 'decimal:2',
+    ];
+
+    // Eager-load frequently used relations to avoid N+1
+    protected $with = ['user', 'package'];
 
     public function user(): BelongsTo
     {

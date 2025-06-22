@@ -34,7 +34,13 @@ class MyTaskResource extends Resource
     
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->check() && !auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user || $user->hasRole('admin')) {
+            return false;
+        }
+
+        // إظهار "مهامي" لأي مستخدم عادي بغض النظر عن الاشتراك
+        return true;
     }
 
     public static function getNavigationBadge(): ?string

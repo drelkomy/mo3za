@@ -21,7 +21,12 @@ class RewardResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) return false;
+        if ($user->hasRole('admin')) return true;
+        
+        $subscription = $user->activeSubscription;
+        return $subscription && $subscription->status === 'active';
     }
     
     public static function canCreate(): bool
@@ -41,14 +46,20 @@ class RewardResource extends Resource
     
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) return false;
+        if ($user->hasRole('admin')) return true;
+        
+        $subscription = $user->activeSubscription;
+        return $subscription && $subscription->status === 'active';
     }
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()->with(['giver', 'receiver', 'task']);
         
         if (!auth()->user()?->hasRole('admin')) {
+            // عرض المكافآت التي منحها الشخص فقط
             $query->where('giver_id', auth()->id());
         }
         
@@ -100,7 +111,8 @@ class RewardResource extends Resource
                     ->modalHeading('تأكيد استلام المكافأة')
                     ->modalDescription('هل تم استلام هذه المكافأة؟'),
             ])
-            ->actions([]);
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getPages(): array

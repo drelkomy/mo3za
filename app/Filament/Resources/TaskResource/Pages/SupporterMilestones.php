@@ -17,7 +17,7 @@ class SupporterMilestones extends Page
     protected static string $view = 'filament.resources.task-resource.pages.supporter-milestones';
     
     public ?Task $record = null;
-    public $participantFilter = '';
+    public $memberFilter = '';
     public $statusFilter = '';
     
     public function mount(Task $record): void
@@ -29,8 +29,8 @@ class SupporterMilestones extends Page
     {
         $milestones = $this->record->milestones();
         
-        if ($this->participantFilter) {
-            $milestones = $milestones->where('participant_id', $this->participantFilter);
+        if ($this->memberFilter) {
+            $milestones = $milestones->where('member_id', $this->memberFilter);
         }
         
         if ($this->statusFilter) {

@@ -6,14 +6,17 @@ use App\Filament\Resources\JoinRequestResource\Pages;
 use App\Models\JoinRequest;
 use App\Models\Team;
 use Filament\Forms\Form;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+
 use App\Models\User;
+use Filament\Notifications\Notification as FilamentNotification;
 
 class JoinRequestResource extends Resource
 {
@@ -31,9 +34,39 @@ class JoinRequestResource extends Resource
 
     protected static ?string $pluralModelLabel = 'طلبات الانضمام';
 
+    public static function canViewResource(Model $record = null): bool
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            return false;
+        }
+
+        // Show to all users who can view join requests
+        return $user->can('view join requests');
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->check(); // إظهار دائماً للمستخدمين المسجلين
+    }
+
+    
+
     public static function getNavigationBadge(): ?string
     {
-        return static::getEloquentQuery()->where('status', 'pending')->count();
+        // Reduce duplicate DB cache lookups within the same HTTP request
+        static $cachedCount = null;
+        if (! is_null($cachedCount)) {
+            return (string) $cachedCount;
+        }
+
+        $userId = Auth::id() ?? 'guest';
+        $cachedCount = Cache::remember("pending_join_requests_count_{$userId}", now()->addMinutes(5), function () {
+            return parent::getEloquentQuery()->where('status', 'pending')->count();
+        });
+
+        return (string) $cachedCount;
     }
 
     public static function form(Form $form): Form
@@ -73,10 +106,11 @@ class JoinRequestResource extends Resource
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('التاريخ')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true), // Hide by default
             ])
             ->actions([
-                Action::make('accept')
+                Tables\Actions\Action::make('accept')
                     ->label('موافقة')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
@@ -88,18 +122,17 @@ class JoinRequestResource extends Resource
                         $team->members()->attach($user->id);
                         $record->update(['status' => 'accepted']);
 
-                        Notification::make()
+                        FilamentNotification::make()
                             ->title('تم قبول الطلب')
-                            ->body("تم قبول {$user->name} في فريق {$team->name}")
+                            ->body("تم قبولك في فريق {$team->name}")
                             ->success()
                             ->send();
                     })
                     ->visible(fn (JoinRequest $record): bool => 
-                        $record->status === 'pending' && 
-                        $record->team->owner_id === Auth::id()
+                        $record->status === 'pending' && $record->user_id === Auth::id()
                     ),
 
-                Action::make('reject')
+                Tables\Actions\Action::make('reject')
                     ->label('رفض')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
@@ -107,27 +140,27 @@ class JoinRequestResource extends Resource
                     ->action(function (JoinRequest $record) {
                         $record->update(['status' => 'rejected']);
                         
-                        Notification::make()
+                        FilamentNotification::make()
                             ->title('تم رفض الطلب')
                             ->warning()
                             ->send();
                     })
                     ->visible(fn (JoinRequest $record): bool => 
-                        $record->status === 'pending' && 
-                        $record->team->owner_id === Auth::id()
+                        $record->status === 'pending' && $record->user_id === Auth::id()
                     ),
                     
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn (JoinRequest $record): bool => 
-                        $record->team->owner_id === Auth::id() || 
-                        $record->user_id === Auth::id()
+                        $record->user_id === Auth::id() || $record->team->owner_id === Auth::id()
                     ),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getRelations(): array
@@ -154,13 +187,13 @@ class JoinRequestResource extends Resource
                 ->latest();
         }
 
-        // عرض الطلبات المرسلة للفرق التي يملكها المستخدم أو الطلبات التي أرسلها
+        // عرض الطلبات للمدعو ومرسل الدعوة
         return parent::getEloquentQuery()
-            ->select(['id', 'user_id', 'team_id', 'status', 'created_at', 'updated_at'])
-            ->where(function ($query) use ($user) {
-                $query->whereHas('team', function ($q) use ($user) {
-                    $q->where('owner_id', $user->id);
-                })->orWhere('user_id', $user->id);
+            ->where(function($query) use ($user) {
+                $query->where('user_id', $user->id) // الطلبات المرسلة للمستخدم
+                      ->orWhereHas('team', function($q) use ($user) {
+                          $q->where('owner_id', $user->id); // الطلبات التي أرسلها قائد الفريق
+                      });
             })
             ->with(['user:id,name,email', 'team:id,name,owner_id'])
             ->latest();

@@ -306,24 +306,41 @@ class PayTabsService
     /**
      * التحقق من صحة callback
      */
-    public function validateCallback(array $data): bool
+    /**
+     * التحقق من صحة callback عبر التوقيع الرقمي
+     * @param string $payload The raw POST data from the callback
+     * @param string|null $requestSignature The signature from the 'Signature' header
+     * @return bool
+     */
+    public function validateCallback(string $payload, ?string $requestSignature): bool
     {
-        // التعامل مع المعاملات المحلية
-        if (isset($data['tran_ref']) && str_starts_with($data['tran_ref'], 'LOCAL-')) {
+        // أولاً، التحقق من المعاملات المحلية التي قد لا تحتوي على توقيع
+        $data = json_decode($payload, true);
+        if (json_last_error() === JSON_ERROR_NONE && isset($data['tran_ref']) && str_starts_with($data['tran_ref'], 'LOCAL-')) {
+            Log::info('Bypassing signature validation for local transaction.');
             return true;
         }
-        
-        // التحقق من وجود البيانات المطلوبة
-        $requiredFields = ['tran_ref', 'payment_result', 'response_status'];
-        
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field])) {
-                return false;
-            }
+
+        // إذا لم يتم توفير توقيع لمعاملة غير محلية، فهي غير صالحة
+        if (empty($requestSignature)) {
+            Log::warning('PayTabs callback received without signature header.');
+            return false;
         }
 
-        // يمكن إضافة تحقق إضافي من التوقيع هنا إذا كان متاحاً
-        return true;
+        $serverKey = $this->serverKey;
+        $computedSignature = hash_hmac('sha256', $payload, $serverKey);
+
+        if (hash_equals($computedSignature, $requestSignature)) {
+            // التوقيع صحيح
+            return true;
+        }
+
+        // التوقيع غير صحيح
+        Log::error('Invalid PayTabs callback signature.', [
+            'received_signature' => $requestSignature,
+            'computed_signature' => $computedSignature,
+        ]);
+        return false;
     }
 
     /**

@@ -3,52 +3,60 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Package;
+use App\Models\Reward;
+use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use App\Models\Task;
+use App\Models\Team;
 use App\Models\Subscription;
-use Filament\Widgets\StatsOverviewWidget as BaseWidget;
-use Filament\Widgets\StatsOverviewWidget\Stat;
+use Filament\Widgets\StatsOverviewWidget;
+use Filament\Widgets\StatsOverviewWidget\Card;
+use Illuminate\Support\Facades\Auth;
 
-class PackageStatsWidget extends BaseWidget
+class PackageStatsWidget extends StatsOverviewWidget
 {
-    protected function getStats(): array
+    /**
+     * عرض للعناصر على صف واحد بالكامل
+     */
+    protected int|string|array $columnSpan = 'full';
+
+    protected function getCards(): array
     {
-        // عرض الإحصائيات للإدمن فقط
-        if (!auth()->user()?->hasRole('admin')) {
+        // لا يُعرض شيء للمستخدمين غير الأدمن – التحقق احتياطاً
+        if (! Auth::check() || ! Auth::user()->hasRole('admin')) {
             return [];
         }
-        
-        $stats = [];
-        
-        // عدد الاشتراكات على كل باقة
-        $packages = Package::where('is_active', true)->get();
-        foreach ($packages as $package) {
-            $subscriptionsCount = \App\Models\Subscription::where('package_id', $package->id)->count();
-            $stats[] = Stat::make($package->name, $subscriptionsCount)
-                ->description('عدد الاشتراكات')
-                ->descriptionIcon('heroicon-m-users')
-                ->color($package->is_trial ? 'info' : 'success');
-        }
 
-        // عدد المهام الكلي
-        $tasksCount = \App\Models\Task::count();
-        $stats[] = Stat::make('عدد المهام', $tasksCount)
-            ->description('إجمالي المهام')
-            ->descriptionIcon('heroicon-m-clipboard-document-list')
-            ->color('primary');
+        $cards = [];
 
-        // عدد الفرق الكلي
-        $teamsCount = \App\Models\Team::count();
-        $stats[] = Stat::make('عدد الفرق', $teamsCount)
-            ->description('إجمالي الفرق')
-            ->descriptionIcon('heroicon-m-users')
-            ->color('warning');
+        // جلب عدد الاشتراكات لكل باقة في استعلام واحد باستخدام withCount
+        Package::query()->withCount('subscriptions')->orderBy('id')->get()->each(function (Package $package) use (&$cards) {
+            $cards[] = Card::make("اشتراكات {$package->name}", $package->subscriptions_count)
+                ->icon('heroicon-o-rectangle-stack')
+                ->color('primary');
+        });
 
-        // عدد المكافآت الكلي
-        $rewardsCount = \App\Models\Reward::count();
-        $stats[] = Stat::make('عدد المكافآت', $rewardsCount)
-            ->description('إجمالي المكافآت')
-            ->descriptionIcon('heroicon-m-banknotes')
+        // إجماليات عامة
+        $cards[] = Card::make('عدد المستخدمين', User::count())
+            ->icon('heroicon-o-users')
+            ->color('danger');
+        $cards[] = Card::make('عدد الفرق', Team::count())
+            ->icon('heroicon-o-users')
+            ->color('info');
+
+        $cards[] = Card::make('عدد المهام', Task::count())
+            ->icon('heroicon-o-clipboard-document-list')
             ->color('success');
 
-        return $stats;
+        $cards[] = Card::make('عدد المكافآت', Reward::count())
+            ->icon('heroicon-o-currency-dollar')
+            ->color('warning');
+
+        return $cards;
+    }
+
+    public static function canView(): bool
+    {
+        return Auth::check() && Auth::user()->hasRole('admin');
     }
 }

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\TeamJoinRequestController;
 Route::middleware('throttle:guest')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/password/reset-link', [\App\Http\Controllers\Api\PasswordResetController::class, 'sendResetLink']);
 });
 
 // المسارات المحمية بالمصادقة - 8 طلبات في الدقيقة للمستخدمين
@@ -32,14 +33,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // تحديث بيانات البروفايل
     Route::post('/profile', [AuthController::class, 'updateProfile']);
-    
+
     // Team Join Requests - طلبات الانضمام
     Route::post('/join-request', [TeamJoinRequestController::class, 'store']); // إرسال طلب
     Route::get('/join-requests', [TeamJoinRequestController::class, 'index']); // طلباتي المرسلة - مع cache
     Route::get('/join-requests/received', [TeamJoinRequestController::class, 'received']); // طلبات مرسلة لي - مع cache
     Route::patch('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'update']); // قبول/رفض
     Route::delete('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'destroy']); // حذف
-    
+
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);
 });
+

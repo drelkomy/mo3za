@@ -27,7 +27,7 @@ class StagesRelationManager extends RelationManager
                 ->label('وصف المرحلة')
                 ->columnSpanFull(),
             Forms\Components\Select::make('status')
-                ->label('حالة الداعم')
+                ->label('الحالة')
                 ->options(self::getStatusOptions())
                 ->default('pending')
                 ->visible(fn (): bool => $this->canManageStages()),
@@ -94,7 +94,8 @@ class StagesRelationManager extends RelationManager
     protected function canManageStages(): bool
     {
         $task = $this->ownerRecord;
+        // The owner of the team the task belongs to, or the admin can manage stages.
         return auth()->user()->hasRole('admin') || 
-               $task->creator_id === auth()->id();
+               ($task->team && auth()->user()->ownsTeam($task->team));
     }
 }

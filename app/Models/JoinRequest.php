@@ -21,6 +21,9 @@ class JoinRequest extends Model
         'updated_at' => 'datetime',
     ];
 
+    // Eager-load relations to prevent N+1 when listing join requests
+    protected $with = ['user', 'team'];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

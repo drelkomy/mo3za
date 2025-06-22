@@ -28,7 +28,8 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->registration()
+            ->registration(\App\Filament\Pages\Auth\Register::class)
+            ->passwordReset(\App\Filament\Pages\Auth\CustomRequestPasswordReset::class)
             ->font('cairo')
             ->topNavigation()
             ->globalSearch(false)
@@ -40,7 +41,7 @@ class AdminPanelProvider extends PanelProvider
                     ->visible(fn (): bool => auth()->check() && !auth()->user()?->hasRole('admin')),
             ])
             ->colors([
-                'primary' =>'#006E82',
+                'primary' => '#006E82',
             ])
             ->resources([
                 \App\Filament\Resources\UserResource::class,
@@ -63,9 +64,8 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
-                \App\Filament\Widgets\PackageSubscriptionWidget::class,
-                \App\Filament\Widgets\SubscriptionStatusWidget::class,
-                \App\Filament\Widgets\TechnicalSupportWidget::class,
+                \App\Filament\Widgets\PackageStatsWidget::class,
+                \App\Filament\Widgets\MemberTaskActivityChartWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -89,14 +89,18 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 'إدارة المستخدمين',
                 'إدارة الفرق',
+                'إدارة الاشتراكات',
                 'مهامي الشخصية',
                 'المحاسبة',
                 'الإعدادات',
             ])
             ->plugin(
                 BreezyCore::make()
-                    ->myProfile()
-                    ->avatarUploadComponent(fn($fileUpload) => $fileUpload->disk('public')->directory('avatars'))
+                    ->myProfile(
+                        shouldRegisterUserMenu: true,
+                        hasAvatars: true
+                    )
             );
     }
 }
+

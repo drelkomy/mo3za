@@ -26,6 +26,7 @@ class MemberPanelProvider extends PanelProvider
             ->id('member')
             ->path('member')
             ->login()
+            ->passwordReset()
             ->font('cairo')
             ->colors([
                 'primary' =>'#006E82',
@@ -40,6 +41,11 @@ class MemberPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
+                \App\Filament\Widgets\StartTrialWidget::class,
+                \App\Filament\Widgets\SubscriptionStatsWidget::class,
+                \App\Filament\Widgets\SubscriptionTasksWidget::class,
+                \App\Filament\Widgets\PackagesWidget::class,
+                \App\Filament\Widgets\TechnicalSupportWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

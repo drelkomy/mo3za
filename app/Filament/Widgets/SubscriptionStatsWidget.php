@@ -3,101 +3,56 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Task;
-use App\Models\Reward;
-use App\Models\Subscription;
-use Filament\Widgets\StatsOverviewWidget as BaseWidget;
-use Filament\Widgets\StatsOverviewWidget\Stat;
+use Filament\Widgets\StatsOverviewWidget;
+use Filament\Widgets\StatsOverviewWidget\Card;
+use Illuminate\Support\Facades\Auth;
 
-class SubscriptionStatsWidget extends BaseWidget
+class SubscriptionStatsWidget extends StatsOverviewWidget
 {
-    public static bool $isLazy = true;
-    
-    protected int | string | array $columnSpan = 3;
-    
-    protected function getColumns(): int
+    protected function getCards(): array
     {
-        return 3;
-    }
-    
-    protected function getStats(): array
-    {
-        $user = auth()->user();
-        
-        if (!$user || !$user->hasRole('داعم') || $user->hasRole('admin')) {
-            return [
-                Stat::make('حالة الاشتراك', 'غير مشترك')
-                    ->description('لا يوجد اشتراك نشط')
-                    ->descriptionIcon('heroicon-m-x-circle')
-                    ->color('danger'),
-            ];
-        }
-        
+        $user = Auth::user()->loadCount('teams');
         $subscription = $user->activeSubscription;
 
         if (!$subscription) {
-            return [
-                Stat::make('حالة الاشتراك', 'غير مشترك')
-                    ->description('لا يوجد اشتراك نشط')
-                    ->descriptionIcon('heroicon-m-x-circle')
-                    ->color('danger'),
-            ];
+            return []; // لا تظهر أي بطاقات إن لم يكن هناك اشتراك نشط
         }
 
-        // المهام المتبقية
-        $usedTasks = $user->createdTasks()->where('created_at', '>=', $subscription->start_date)->count();
-        $remainingTasks = max(0, $subscription->max_tasks - $usedTasks);
-        $totalTasks = $subscription->max_tasks;
-        $tasksPercentage = $totalTasks > 0 ? round(($usedTasks / $totalTasks) * 100) : 0;
+        $remainingTasks = max(0, $subscription->max_tasks - $subscription->tasks_created);
 
-        // المشاركين المتبقين
-        $usedParticipants = $user->participants()->count();
-        $remainingParticipants = max(0, $subscription->max_participants - $usedParticipants);
-        $totalParticipants = $subscription->max_participants;
-        $participantsPercentage = $totalParticipants > 0 ? round(($usedParticipants / $totalParticipants) * 100) : 0;
-        
-        // المهام المكتملة والمعلقة
-        $completedTasks = Task::where('supporter_id', $user->id)
-            ->where('status', 'completed')
-            ->count();
-        $pendingTasks = Task::where('supporter_id', $user->id)
-            ->where('status', 'pending')
-            ->count();
-            
-        // المكافآت
-        $totalRewards = Reward::whereHas('task', function ($q) use ($user) {
-            $q->where('supporter_id', $user->id);
-        })->sum('amount');
-        
-        // المهام والمكافآت السابقة
-        $previousCompletedTasks = $subscription->previous_tasks_completed ?? 0;
-        $previousPendingTasks = $subscription->previous_tasks_pending ?? 0;
-        $previousRewards = $subscription->previous_rewards_amount ?? 0;
-        
-        $isConsumptionBased = ($subscription->max_tasks > 0) || ($subscription->max_participants > 0);
+        // يفترض أن لدى المستخدم علاقة teams()
+        $teamsCount = $user->teams_count;
 
-        if ($isConsumptionBased) {
-            $packageDescription = 'تنتهي عند استهلاك حدود الباقة';
-            $packageIcon = 'heroicon-m-clipboard-document-check';
-        } else {
-            $packageDescription = $subscription->end_date ? 'تنتهي في ' . $subscription->end_date->format('Y-m-d') : 'باقة دائمة';
-            $packageIcon = 'heroicon-m-calendar';
-        }
+        $taskStats = Task::selectRaw(
+                "SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                 SUM(CASE WHEN status != 'completed' THEN 1 ELSE 0 END) as pending"
+            )
+            ->where('receiver_id', $user->id)
+            ->first();
+
+        $completedTasks = $taskStats->completed;
+        $pendingTasks   = $taskStats->pending;
+
+        $totalRewards   = Task::where('receiver_id', $user->id)->sum('reward_amount');
 
         return [
-            Stat::make('الباقة', $subscription->package->name)
-                ->description($packageDescription)
-                ->descriptionIcon($packageIcon)
+            Card::make('المهام المتبقية', $remainingTasks)
+                ->description('من أصل ' . $subscription->max_tasks)
+                ->color('success'),
+            Card::make('عدد الفرق', $teamsCount)
+                ->color('info'),
+            Card::make('إجمالي المكافآت', number_format($totalRewards, 2) . ' ﷼')
                 ->color('primary'),
-                
-            Stat::make('المهام المتبقية', $remainingTasks . ' / ' . $totalTasks)
-                ->description('استهلاك ' . $tasksPercentage . '% من المهام')
-                ->descriptionIcon('heroicon-m-clipboard-document-check')
-                ->color($remainingTasks > 0 ? 'success' : 'danger'),
-                
-            Stat::make('المشاركين المتبقين', $remainingParticipants . ' / ' . $totalParticipants)
-                ->description('استهلاك ' . $participantsPercentage . '% من المشاركين')
-                ->descriptionIcon('heroicon-m-user-group')
-                ->color($remainingParticipants > 0 ? 'success' : 'danger'),
+            Card::make('المهام المنجزة', $completedTasks)
+                ->color('success'),
+            Card::make('المهام غير المنجزة', $pendingTasks)
+                ->color('warning'),
         ];
+    }
+
+    public static function canView(): bool
+    {
+        // يظهر فقط إذا كان للمستخدم اشتراك نشط
+        return Auth::check() && Auth::user()->hasActiveSubscription();
     }
 }

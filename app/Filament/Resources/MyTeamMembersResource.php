@@ -21,7 +21,7 @@ class MyTeamMembersResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->check();
+        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
     }
     
     public static function canCreate(): bool
@@ -47,7 +47,10 @@ class MyTeamMembersResource extends Resource
     public static function shouldRegisterNavigation(): bool
     {
         $user = auth()->user();
-        return $user && ($user->ownedTeams()->exists() || $user->teams()->exists());
+        if (!$user) return false;
+        if ($user->hasRole('admin')) return true;
+
+        return $user->hasActiveSubscription() && ($user->ownedTeams()->exists() || $user->teams()->exists());
     }
 
     public static function getEloquentQuery(): Builder

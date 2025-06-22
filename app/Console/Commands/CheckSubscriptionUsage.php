@@ -37,6 +37,8 @@ class CheckSubscriptionUsage extends Command
         $updated = 0;
         
         foreach ($subscriptions as $subscription) {
+
+
             // Check if tasks limit is reached
             if ($subscription->tasks_created >= $subscription->max_tasks) {
                 $subscription->status = 'expired';
@@ -53,21 +55,6 @@ class CheckSubscriptionUsage extends Command
                 continue;
             }
             
-            // Check if participants limit is reached
-            if ($subscription->participants_created >= $subscription->max_participants) {
-                $subscription->status = 'expired';
-                $subscription->save();
-                
-                Log::info('Subscription expired due to participants limit', [
-                    'subscription_id' => $subscription->id,
-                    'user_id' => $subscription->user_id,
-                    'participants_created' => $subscription->participants_created,
-                    'max_participants' => $subscription->max_participants
-                ]);
-                
-                $updated++;
-                continue;
-            }
         }
         
         $this->info("Updated {$updated} subscriptions to expired status");

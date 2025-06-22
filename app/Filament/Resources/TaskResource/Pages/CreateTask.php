@@ -7,6 +7,7 @@ use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Task;
 use Filament\Notifications\Notification;
+use Filament\Support\Exceptions\Halt;
 
 class CreateTask extends CreateRecord
 {
@@ -14,18 +15,43 @@ class CreateTask extends CreateRecord
 
     protected function handleRecordCreation(array $data): Model
     {
+        $user = auth()->user();
+        $subscription = $user->activeSubscription;
+
+        if (!$subscription || !$subscription->package) {
+            Notification::make()
+                ->title('خطأ في الاشتراك')
+                ->body('لا يوجد لديك اشتراك فعال أو باقة محددة.')
+                ->danger()
+                ->send();
+            throw new Halt();
+        }
+
+        $taskLimit = $subscription->package->max_tasks ?? 0;
+        // حساب المهام من تاريخ بدء الاشتراك
+        $startDate = $subscription->start_date ?? $subscription->created_at;
+        $currentTaskCount = Task::where('creator_id', $user->id)
+            ->where('created_at', '>=', $startDate)
+            ->count();
+        $newTasksCount = count($data['receiver_ids']);
+
+        if ($taskLimit > 0 && ($currentTaskCount + $newTasksCount) > $taskLimit) {
+            Notification::make()
+                ->title('تم الوصول لحد الباقة!')
+                ->body("لا يمكنك إنشاء مهام جديدة. لقد وصلت للحد الأقصى ({$taskLimit} مهمة) منذ بداية اشتراكك.")
+                ->danger()
+                ->send();
+            throw new Halt();
+        }
+
         $lastTask = null;
         $receiverIds = $data['receiver_ids'];
         $taskData = $data;
-        unset($taskData['receiver_ids']); // Unset as we will loop over it
+        unset($taskData['receiver_ids']);
 
-        // Set common data for all tasks
-        $user = auth()->user();
-        $subscription = $user?->activeSubscription();
         $taskData['creator_id'] = $user->id;
-        $taskData['subscription_id'] = $subscription?->id;
+        $taskData['subscription_id'] = $subscription->id;
 
-        // Calculate due_date once
         if (isset($taskData['duration_days'], $taskData['start_date']) && is_numeric($taskData['duration_days'])) {
             $days = intval($taskData['duration_days']);
             if ($days > 0) {
@@ -33,13 +59,10 @@ class CreateTask extends CreateRecord
             }
         }
 
-        // Loop through each receiver and create a task and its stages
         foreach ($receiverIds as $receiverId) {
             $taskData['receiver_id'] = $receiverId;
-
             $task = Task::create($taskData);
 
-            // Create stages for the newly created task
             if ($task->total_stages > 0) {
                 $stages = [];
                 for ($i = 1; $i <= $task->total_stages; $i++) {
@@ -55,15 +78,19 @@ class CreateTask extends CreateRecord
                 \App\Models\TaskStage::insert($stages);
             }
             
+            // تحديث عداد المهام في الاشتراك
+            app(\App\Services\SubscriptionService::class)->incrementTasksCreated($user);
+            
             $lastTask = $task;
         }
+
+
 
         Notification::make()
             ->title('تم إنشاء المهام لجميع المستلمين بنجاح')
             ->success()
             ->send();
 
-        // Return the last task to ensure Filament's redirect works as expected
         return $lastTask;
     }
 }

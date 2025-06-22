@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\TaskResource\Pages;
+use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -21,17 +22,27 @@ class TaskResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+        // Show if user has an active subscription, has created tasks, or has received tasks.
+        $subscription = $user->activeSubscription;
+        return ($subscription && $subscription->status === 'active') || $user->createdTasks()->exists() || $user->receivedTasks()->exists();
     }
     
     public static function canCreate(): bool
     {
         $user = auth()->user();
-        if ($user?->hasRole('admin')) return false;
-        
-        return $user?->hasActiveSubscription() && 
-               $user?->canAddTasks() && 
-               $user->ownedTeams()->exists();
+        if (!$user) {
+            return false;
+        }
+
+        // The canAddTasks method handles subscription checks. We also need to ensure the user owns a team.
+        return $user->canAddTasks() && $user->ownedTeams()->exists();
     }
     
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
@@ -46,14 +57,24 @@ class TaskResource extends Resource
     
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+        // Show navigation item if user has an active subscription, has created tasks, or has received tasks.
+        $subscription = $user->activeSubscription;
+        return ($subscription && $subscription->status === 'active') || $user->createdTasks()->exists() || $user->receivedTasks()->exists();
     }
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['receiver']);
+        $query = parent::getEloquentQuery()->with(['receiver', 'creator', 'stages', 'rewards']);
         
-        if (!auth()->user()?->hasRole('admin')) {
+        if (auth()->check() && !auth()->user()->hasRole('admin')) {
+            // عرض المهام التي أنشأها الشخص فقط
             $query->where('creator_id', auth()->id());
         }
         
@@ -132,10 +153,18 @@ class TaskResource extends Resource
                     Forms\Components\TextInput::make('total_stages')
                         ->label('عدد المراحل')
                         ->numeric()
-                        ->default(3)
+                        ->default(function() {
+                            $user = auth()->user();
+                            $subscription = $user?->activeSubscription;
+                            return min(3, $subscription?->package?->max_milestones_per_task ?? 3);
+                        })
                         ->required()
                         ->minValue(1)
-                        ->maxValue(10),
+                        ->maxValue(function() {
+                            $user = auth()->user();
+                            $subscription = $user?->activeSubscription;
+                            return $subscription?->package?->max_milestones_per_task ?? 10;
+                        }),
                     
                     Forms\Components\Select::make('reward_type')
                         ->label('نوع المكافأة')
@@ -242,40 +271,75 @@ class TaskResource extends Resource
                 Tables\Actions\Action::make('stages')
                     ->label('المراحل')
                     ->icon('heroicon-o-list-bullet')
-                    ->url(fn (Task $record): string => route('filament.admin.resources.my-tasks.stages', $record))
-                    ->visible(fn () => auth()->user()?->hasRole('admin')),
+                    ->modalHeading('مراحل المهمة')
+                    ->modalContent(function (Task $record) {
+                        $stages = $record->stages()->with('media')->get();
+                        return view('filament.components.task-stages', ['stages' => $stages, 'task' => $record]);
+                    })
+                    ->modalWidth('4xl'),
                 
                 Tables\Actions\Action::make('complete')
-                    ->label('إنهاء وتوزيع المكافأة')
-                    ->icon('heroicon-o-check-circle')
+                    ->label('إغلاق المهمة وتسليم الجائزة')
+                    ->icon('heroicon-o-gift')
                     ->color('success')
                     ->action(function (Task $record) {
-                        // 1. Mark task as completed
-                        $record->status = 'completed';
-                        $record->save();
-
-                        // 2. Automatically create the reward if applicable
+                        $record->update(['status' => 'completed', 'progress' => 100]);
+                        
+                        // تحديث جميع المراحل إلى مكتملة
+                        $record->stages()->update(['status' => 'completed']);
+                        
+                        // إنشاء المكافأة
                         if ($record->reward_type === 'cash' && $record->reward_amount > 0) {
                             \App\Models\Reward::create([
                                 'task_id' => $record->id,
-                                'giver_id' => $record->creator_id, // The one who created the task
+                                'giver_id' => $record->creator_id,
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => $record->reward_amount,
-                                'status' => 'pending', // Pending for the receiver to claim
+                                'status' => 'completed',
+                                'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
                         }
                         
-                        
+                        \Filament\Notifications\Notification::make()
+                            ->title('تم إغلاق المهمة وتسليم الجائزة')
+                            ->success()
+                            ->send();
                     })
                     ->visible(fn (Task $record) => $record->creator_id === auth()->id() && $record->status !== 'completed')
-                    ->requiresConfirmation(),
+                    ->requiresConfirmation()
+                    ->modalHeading('تأكيد إغلاق المهمة')
+                    ->modalDescription('هل أنت متأكد من إغلاق هذه المهمة وتسليم الجائزة للمستلم؟'),
+                
+                Tables\Actions\Action::make('attachments')
+                    ->label('المرفقات')
+                    ->icon('heroicon-o-paper-clip')
+                    ->color('info')
+                    ->modalHeading('مرفقات إثبات إنجاز المهمة')
+                    ->modalContent(function (Task $record) {
+                        $attachments = $record->getMedia('payment_proofs');
+                        if ($attachments->isEmpty()) {
+                            return view('filament.components.no-attachments');
+                        }
+                        return view('filament.components.task-attachments', ['attachments' => $attachments]);
+                    })
+                    ->modalWidth('2xl')
+                    ->visible(fn (Task $record) => $record->getMedia('task_attachments')->isNotEmpty()),
                 
                 Tables\Actions\ViewAction::make(),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     // The afterCreate hook has been moved to the CreateTask page to handle the creation logic.
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\MembersRelationManager::class,
+        ];
+    }
 
     public static function getPages(): array
     {

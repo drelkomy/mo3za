@@ -11,7 +11,7 @@ class CheckActiveSubscription
 {
     /**
      * Handle an incoming request.
-     * التحقق من وجود اشتراك نشط للمستخدم قبل السماح بإضافة مهام أو مشاركين
+     * التحقق من وجود اشتراك نشط للمستخدم قبل السماح بإضافة مهام أو أعضاء للفريق
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */

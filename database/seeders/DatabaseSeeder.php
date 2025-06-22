@@ -22,8 +22,10 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AreasAndCitiesSeeder::class,
             PackageSeeder::class,
-            AdminUserSeeder::class,
             RolesAndPermissionsSeeder::class,
+            AssignAdminRoleSeeder::class,
+            AdminUserSeeder::class,
+            TestMembersSeeder::class,
         ]);
     }
 }

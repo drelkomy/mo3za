@@ -54,9 +54,11 @@ Route::prefix('paytabs')->name('paytabs.')->group(function () {
     Route::get('/failed', [PaymentController::class, 'failed'])->name('failed');
     Route::get('/cancel', [PaymentController::class, 'cancel'])->name('cancel');
 
-    // تفعيل الدفع بعد النجاح
-    Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])
-        ->name('activate');
+    // تفعيل الدفع بعد النجاح (للتطوير المحلي فقط)
+    if (app()->environment('local')) {
+        Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])
+            ->name('activate');
+    }
 
     // التحقق من حالة الدفع
     Route::match(['get', 'post'], '/check-status', [PaymentController::class, 'checkPaymentStatus'])

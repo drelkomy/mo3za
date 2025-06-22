@@ -12,8 +12,8 @@ class Subscription extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id', 'package_id', 'status', 'payment_id', 'price_paid',
-        'tasks_created', 'participants_created', 'max_tasks', 'max_participants',
+        'user_id', 'package_id', 'team_id', 'status', 'payment_id', 'price_paid',
+        'tasks_created', 'max_tasks',
         'max_milestones_per_task', 'previous_tasks_completed', 'previous_tasks_pending',
         'previous_rewards_amount', 'start_date', 'end_date'
     ];
@@ -22,9 +22,9 @@ class Subscription extends Model
         'start_date' => 'date',
         'end_date' => 'date',
         'tasks_created' => 'integer',
-        'participants_created' => 'integer',
+
         'max_tasks' => 'integer',
-        'max_participants' => 'integer',
+
         'max_milestones_per_task' => 'integer',
         'price_paid' => 'decimal:2',
         'previous_tasks_completed' => 'integer',
@@ -47,6 +47,8 @@ class Subscription extends Model
         return $query->where('status', '!=', 'active');
     }
 
+
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -61,6 +63,19 @@ class Subscription extends Model
     {
         return $this->belongsTo(Payment::class);
     }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    // Get active subscription for user (static method for User model)
+    public static function getActiveSubscription(User $user): ?Subscription
+    {
+        return static::where('user_id', $user->id)
+                    ->where('status', 'active')
+                    ->first();
+    }
     
     public function canCreateTask(): bool
     {
@@ -68,10 +83,9 @@ class Subscription extends Model
         return $this->status === 'active' && $this->tasks_created < $this->max_tasks;
     }
     
-    public function canAddParticipant(): bool
+    public function canAddMember(): bool
     {
-        // تحسين الأداء بتجنب الاستعلامات
-        return $this->status === 'active' && $this->participants_created < $this->max_participants;
+        return $this->status === 'active';
     }
 
     public function incrementTasksCreated(): bool
@@ -83,30 +97,16 @@ class Subscription extends Model
         return false;
     }
 
-    public function incrementParticipantsCreated(): bool
-    {
-        if ($this->canAddParticipant()) {
-            // استخدام increment بدلاً من update لتحسين الأداء
-            return $this->increment('participants_created') ? true : false;
-        }
-        return false;
-    }
-
     public function isExpired(): bool
     {
-        // تحسين الأداء بتجنب الاستعلامات
         if ($this->status !== 'active') {
             return true;
         }
-        
-        if ($this->tasks_created >= $this->max_tasks) {
+
+        if ($this->max_tasks > 0 && $this->tasks_created >= $this->max_tasks) {
             return true;
         }
-        
-        if ($this->participants_created >= $this->max_participants) {
-            return true;
-        }
-        
+
         return false;
     }
 }

@@ -17,7 +17,6 @@ class PackageSeeder extends Seeder
                 'name' => 'الباقة التجريبية',
                 'price' => 0,
                 'max_tasks' => 3,
-                'max_participants' => 2,
                 'max_milestones_per_task' => 2,
                 'is_active' => true,
             ],
@@ -25,7 +24,7 @@ class PackageSeeder extends Seeder
                 'name' => 'الباقة الأساسية',
                 'price' => 99.99,
                 'max_tasks' => 10,
-                'max_participants' => 5,
+
                 'max_milestones_per_task' => 5,
                 'is_active' => true,
             ],
@@ -33,7 +32,7 @@ class PackageSeeder extends Seeder
                 'name' => 'الباقة المتقدمة',
                 'price' => 199.99,
                 'max_tasks' => 50,
-                'max_participants' => 25,
+
                 'max_milestones_per_task' => 10,
                 'is_active' => true,
             ],
@@ -41,7 +40,6 @@ class PackageSeeder extends Seeder
                 'name' => 'الباقة الاحترافية',
                 'price' => 299.99,
                 'max_tasks' => 100,
-                'max_participants' => 50,
                 'max_milestones_per_task' => 15,
                 'is_active' => true,
             ],

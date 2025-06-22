@@ -25,38 +25,55 @@ class TeamResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        return $user->canAddTeamMembers();
     }
-    
+
     public static function canCreate(): bool
     {
         $user = auth()->user();
-        if ($user?->hasRole('admin')) return false; // إخفاء زر الإضافة للأدمن
-        
-        if ($user?->hasActiveSubscription()) {
-            return $user->ownedTeams()->count() === 0;
+        if (!$user || $user->hasRole('admin')) {
+            return false;
         }
-        
-        return false;
+
+        // User must have a valid subscription and not own any teams yet.
+        return $user->canAddTeamMembers() && $user->ownedTeams()->count() === 0;
     }
-    
+
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->hasActiveSubscription() || auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        return $user->canAddTeamMembers();
     }
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()
+            ->with(['owner', 'members']);
 
-        // الأدمن يرى جميع الفرق
-        if (auth()->user()?->hasRole('admin')) {
-            return $query;
+        // إذا لم يكن المستخدم أدمن، قيّد النتائج على فرقه فقط
+        if (! auth()->user()?->hasRole('admin')) {
+            $query->where('owner_id', auth()->id());
         }
 
-        // العضو يرى فريقه فقط (كمالك فقط)
-        return $query->where('owner_id', auth()->id());
+        return $query;
     }
+
+        
 
     public static function form(Form $form): Form
     {
@@ -107,28 +124,44 @@ class TeamResource extends Resource
 
                         $existingRequest = JoinRequest::where('user_id', $userToInvite->id)
                             ->where('team_id', $team->id)
-                            ->where('status', 'pending')
-                            ->exists();
+                            ->first();
 
                         if ($existingRequest) {
-                            Notification::make()->title('طلب موجود')->body('يوجد طلب انضمام معلق بالفعل لهذا المستخدم.')->warning()->send();
+                            // إذا كان الطلب مرفوضاً، يمكن تحديثه
+                            if ($existingRequest->status === 'rejected') {
+                                $existingRequest->update(['status' => 'pending']);
+                                Notification::make()->title('تم إرسال الطلب بنجاح')->body("تم إرسال طلب انضمام إلى {$userToInvite->name}.")->success()->send();
+                                return;
+                            }
+                            
+                            $status = match($existingRequest->status) {
+                                'pending' => 'معلق',
+                                'accepted' => 'مقبول',
+                                default => $existingRequest->status
+                            };
+                            
+                            Notification::make()->title('طلب موجود')->body("يوجد طلب انضمام {$status} بالفعل لهذا المستخدم.")->warning()->send();
                             return;
                         }
 
+                        // إنشاء طلب جديد
                         JoinRequest::create([
                             'user_id' => $userToInvite->id,
                             'team_id' => $team->id,
+                            'status' => 'pending',
                         ]);
 
                         Notification::make()->title('تم إرسال الطلب بنجاح')->body("تم إرسال طلب انضمام إلى {$userToInvite->name}.")->success()->send();
                     })
-                    ->visible(fn (): bool => Auth::user()->ownedTeams()->exists() && !Auth::user()->hasRole('admin'))
+                    ->visible(fn (): bool => auth()->user()->canAddTeamMembers())
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make()->label('عرض الأعضاء'),
             ])
-            ->bulkActions([]);
+            ->bulkActions([])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getPages(): array

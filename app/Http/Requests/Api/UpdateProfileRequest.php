@@ -18,7 +18,7 @@ class UpdateProfileRequest extends FormRequest
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $this->user()->id,
             'phone' => 'sometimes|nullable|string|max:20',
-            'avatar_url' => 'sometimes|nullable|string',
+            'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:2048'],
             'gender' => 'sometimes|nullable|in:male,female',
             'birthdate' => 'sometimes|nullable|date',
             'password' => 'sometimes|nullable|string|min:8',
@@ -27,13 +27,7 @@ class UpdateProfileRequest extends FormRequest
                 'sometimes',
                 'nullable',
                 'integer',
-                Rule::exists('areas', 'id')->where(function ($query) {
-                    // Only validate if city_id is provided
-                    if ($this->input('city_id')) {
-                        return $query->where('city_id', $this->input('city_id'));
-                    }
-                    return $query;
-                }),
+                'exists:areas,id',
             ],
         ];
     }

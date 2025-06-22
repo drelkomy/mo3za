@@ -19,10 +19,6 @@
                                 <span class="font-semibold">{{ $package->max_tasks }}</span>
                             </div>
                             <div class="flex justify-between">
-                                <span>المشاركين:</span>
-                                <span class="font-semibold">{{ $package->max_participants }}</span>
-                            </div>
-                            <div class="flex justify-between">
                                 <span>المراحل لكل مهمة:</span>
                                 <span class="font-semibold">{{ $package->max_milestones_per_task }}</span>
                             </div>

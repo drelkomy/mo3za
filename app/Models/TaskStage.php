@@ -22,6 +22,9 @@ class TaskStage extends Model implements HasMedia
         'stage_number' => 'integer',
     ];
 
+    // Eager-load task to avoid N+1 when listing stages with their task
+    protected $with = ['task'];
+
     // تحسين الأداء بإضافة الفهارس
     protected static function boot()
     {

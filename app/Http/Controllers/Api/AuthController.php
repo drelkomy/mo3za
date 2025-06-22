@@ -122,6 +122,16 @@ class AuthController extends Controller
             unset($data['password']);
         }
 
+        // Handle avatar upload
+        if ($request->hasFile('avatar')) {
+            // Store the file and update the user's avatar_url directly
+            $path = $request->file('avatar')->store('avatars', 'public');
+            $user->avatar_url = $path;
+
+            // Remove the avatar file from the data array to prevent mass assignment issues
+            unset($data['avatar']);
+        }
+
         // Use fill for all other validated data
         $user->fill($data);
         $user->save();

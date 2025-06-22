@@ -40,12 +40,12 @@ class PaymentResource extends Resource
     
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
-        
+        $query = parent::getEloquentQuery()->with(['user', 'package']);
+
         if (!auth()->user()?->hasRole('admin')) {
             $query->where('user_id', auth()->id());
         }
-        
+
         return $query;
     }
     
@@ -153,7 +153,9 @@ class PaymentResource extends Resource
                     Tables\Actions\DeleteBulkAction::make()
                         ->visible(fn () => auth()->user()->hasRole('admin')),
                 ]),
-            ]);
+            ])
+            ->paginationPageOptions([5])
+            ->defaultPaginationPageOption(5);
     }
 
     public static function getRelations(): array
