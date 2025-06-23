@@ -150,9 +150,16 @@ class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar,
     /**
      * Get the active subscription for the user.
      * Returns the most recent active subscription.
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
      */
-    public function activeSubscription(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function getActiveSubscriptionAttribute()
+    {
+        return $this->subscriptions()
+            ->where('status', 'active')
+            ->latest('created_at')
+            ->first();
+    }
+    
+    public function activeSubscriptionRelation(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(Subscription::class)
             ->where('status', 'active')
@@ -165,7 +172,7 @@ class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar,
         return cache()->remember(
             "user_{$this->id}_has_active_subscription",
             300, // 5 دقائق
-            fn() => $this->activeSubscription()->exists()
+            fn() => $this->activeSubscriptionRelation()->exists()
         );
     }
 

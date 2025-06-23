@@ -46,15 +46,19 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Task Management - إدارة المهام
     Route::post('/team/create-task', [TeamController::class, 'createTask'])
         ->middleware('throttle:10,1'); // 10 مهام في الدقيقة
-    Route::get('/team/tasks', [TeamController::class, 'getTeamTasks']); // عرض مهام الفريق
-    Route::get('/team/rewards', [TeamController::class, 'getTeamRewards']); // عرض مكافآت الفريق
+    Route::get('/team/tasks', [TeamController::class, 'getTeamTasks'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهام الفريق
+    Route::get('/team/rewards', [TeamController::class, 'getTeamRewards'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق
     Route::get('/team/member-stats', [TeamController::class, 'getMemberStats']); // إحصائيات عضو محدد
-    Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks']); // عرض مهامي الشخصية
+    Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهامي الشخصية
     Route::post('/tasks/complete-stage', [\App\Http\Controllers\Api\TaskController::class, 'completeStage'])
         ->middleware('throttle:20,1'); // 20 مرحلة في الدقيقة
     Route::post('/tasks/close', [\App\Http\Controllers\Api\TaskController::class, 'closeTask'])
         ->middleware('throttle:10,1'); // 10 إغلاق في الدقيقة
-    Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards']); // عرض مكافآتي
+    Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآتي
 
     // Packages & Subscriptions - الباقات والاشتراكات
     Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات المدفوعة

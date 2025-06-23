@@ -4,14 +4,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TaskWithStagesResource;
+use App\Http\Resources\TaskResource;
+use App\Http\Resources\RewardResource;
 use App\Models\Task;
+use App\Models\Reward;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class TaskController extends Controller
 {
-    public function myTasks(Request $request): JsonResponse
+    public function myTasks(\App\Http\Requests\Api\MyTasksRequest $request): JsonResponse
     {
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -20,10 +24,15 @@ class TaskController extends Controller
         $cacheKey = "my_tasks_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$status}";
         
         $tasksData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
-            $query = Task::where('assigned_to', auth()->id())
-                ->with(['assignedTo:id,name', 'creator:id,name', 'stages' => function($q) {
-                    $q->orderBy('stage_number');
-                }])
+            $query = Task::where('receiver_id', auth()->id())
+                ->with([
+                    'receiver:id,name,email,avatar_url', 
+                    'creator:id,name', 
+                    'stages' => function($q) {
+                        $q->orderBy('stage_number');
+                    }
+                ])
+                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
                 ->withCount('stages');
             
             if ($status) {
@@ -35,13 +44,20 @@ class TaskController extends Controller
                 ->take($perPage)
                 ->get();
             
-            $total = Task::where('assigned_to', auth()->id())
+            $total = Task::where('receiver_id', auth()->id())
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->count();
+                
+            $statusCounts = Task::where('receiver_id', auth()->id())
+                ->select('status', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
+                ->groupBy('status')
+                ->pluck('count', 'status')
+                ->toArray();
             
             return [
                 'tasks' => $tasks,
                 'total' => $total,
+                'status_counts' => $statusCounts,
                 'current_page' => $page,
                 'per_page' => $perPage,
                 'last_page' => ceil($total / $perPage)
@@ -50,9 +66,10 @@ class TaskController extends Controller
         
         return response()->json([
             'message' => 'تم جلب مهامي بنجاح',
-            'data' => TaskWithStagesResource::collection($tasksData['tasks']),
+            'data' => TaskResource::collection($tasksData['tasks']),
             'meta' => [
                 'total' => $tasksData['total'],
+                'status_counts' => $tasksData['status_counts'] ?? [],
                 'current_page' => $tasksData['current_page'],
                 'per_page' => $tasksData['per_page'],
                 'last_page' => $tasksData['last_page']
@@ -147,7 +164,7 @@ class TaskController extends Controller
         ]);
     }
 
-    public function myRewards(Request $request): JsonResponse
+    public function myRewards(\App\Http\Requests\Api\MyRewardsRequest $request): JsonResponse
     {
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -156,9 +173,13 @@ class TaskController extends Controller
         $cacheKey = "my_rewards_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$status}";
         
         $rewardsData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
-            $query = \App\Models\Reward::where('user_id', auth()->id())
-                ->with(['task:id,title', 'distributedBy:id,name'])
-                ->orderBy('distributed_at', 'desc');
+            $query = \App\Models\Reward::where('receiver_id', auth()->id())
+                ->with([
+                    'task:id,title,team_id', 
+                    'giver:id,name,email'
+                ])
+                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'created_at')
+                ->orderBy('created_at', 'desc');
             
             if ($status) {
                 $query->where('status', $status);
@@ -168,18 +189,25 @@ class TaskController extends Controller
                 ->take($perPage)
                 ->get();
             
-            $total = \App\Models\Reward::where('user_id', auth()->id())
+            $total = \App\Models\Reward::where('receiver_id', auth()->id())
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->count();
             
-            $totalAmount = \App\Models\Reward::where('user_id', auth()->id())
+            $totalAmount = \App\Models\Reward::where('receiver_id', auth()->id())
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->sum('amount');
+                
+            $statusCounts = \App\Models\Reward::where('receiver_id', auth()->id())
+                ->select('status', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
+                ->groupBy('status')
+                ->pluck('count', 'status')
+                ->toArray();
             
             return [
                 'rewards' => $rewards,
                 'total' => $total,
                 'total_amount' => $totalAmount,
+                'status_counts' => $statusCounts,
                 'current_page' => $page,
                 'per_page' => $perPage,
                 'last_page' => ceil($total / $perPage)
@@ -192,6 +220,7 @@ class TaskController extends Controller
             'meta' => [
                 'total' => $rewardsData['total'],
                 'total_amount' => $rewardsData['total_amount'],
+                'status_counts' => $rewardsData['status_counts'] ?? [],
                 'current_page' => $rewardsData['current_page'],
                 'per_page' => $rewardsData['per_page'],
                 'last_page' => $rewardsData['last_page']

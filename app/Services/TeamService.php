@@ -19,6 +19,17 @@ class TeamService
         });
     }
 
+    public function getMyTeamWithMembers(int $userId): ?Team
+    {
+        return Team::select(['id', 'name', 'owner_id', 'created_at'])
+            ->where('owner_id', $userId)
+            ->with([
+                'owner:id,name',
+                'members:id,name'
+            ])
+            ->first();
+    }
+
     public function clearTeamCache(int $userId): void
     {
         Cache::forget("optimized_team_{$userId}");
