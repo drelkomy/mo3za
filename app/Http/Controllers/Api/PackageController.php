@@ -39,8 +39,9 @@ class PackageController extends Controller
             
         if ($hasUsedTrial) {
             return response()->json([
-                'message' => 'لقد استخدمت الباقة التجريبية من قبل',
-                'trial_package' => null
+                'message' => 'لقد استخدمت الباقة التجريبية من قبل - لا يمكن تجديدها',
+                'trial_package' => null,
+                'can_renew' => false
             ], 422);
         }
         
@@ -63,6 +64,20 @@ class PackageController extends Controller
         }
         
         $package = Package::find($request->input('package_id'));
+        
+        // منع تجديد الباقة التجريبية
+        if ($package->is_trial) {
+            $hasUsedTrial = auth()->user()->subscriptions()
+                ->whereHas('package', function($q) {
+                    $q->where('is_trial', true);
+                })->exists();
+                
+            if ($hasUsedTrial) {
+                return response()->json([
+                    'message' => 'لا يمكن الاشتراك في الباقة التجريبية أكثر من مرة واحدة'
+                ], 422);
+            }
+        }
         
         // فحص وجود اشتراك نشط أو معلق
         $existingSubscription = auth()->user()->subscriptions()
