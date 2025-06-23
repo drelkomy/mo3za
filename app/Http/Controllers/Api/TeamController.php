@@ -48,7 +48,8 @@ class TeamController extends Controller
         if (!$team) {
             return response()->json([
                 'message' => 'أنت لست مالك فريق - لا تملك فريقاً خاصاً بك',
-                'data' => null
+                'data' => null,
+                'is_owner' => false
             ]);
         }
         
