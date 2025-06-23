@@ -119,11 +119,7 @@ class InvitationController extends Controller
 
     public function teamInvitations(Request $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
 
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -193,9 +189,8 @@ class InvitationController extends Controller
             $invitation->team->members()->attach(auth()->id());
         }
         
-        // مسح cache
-        Cache::forget('my_invitations_*');
-        Cache::forget('team_invitations_*');
+        // مسح cache باستخدام tags
+        Cache::tags(['invitations'])->flush();
         
         $message = $request->action === 'accept' ? 'تم قبول الدعوة بنجاح' : 'تم رفض الدعوة';
         
@@ -216,9 +211,8 @@ class InvitationController extends Controller
         
         $invitation->delete();
         
-        // مسح cache
-        Cache::forget('my_invitations_*');
-        Cache::forget('team_invitations_*');
+        // مسح cache باستخدام tags
+        Cache::tags(['invitations'])->flush();
         
         return response()->json(['message' => 'تم حذف الدعوة بنجاح']);
     }

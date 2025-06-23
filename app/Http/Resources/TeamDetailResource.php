@@ -27,7 +27,8 @@ class TeamDetailResource extends JsonResource
                         'id' => $member->id,
                         'name' => $member->name,
                         'email' => $member->email,
-                        'joined_at' => $member->pivot->created_at ? $member->pivot->created_at->format('Y-m-d H:i:s') : null
+                        'avatar' => $member->avatar ? url('storage/' . $member->avatar) : null,
+                        'joined_at' => $member->pivot->created_at ? $member->pivot->created_at->format('Y-m-d H:i:s') : null,
                     ];
                 });
             }),

@@ -19,14 +19,14 @@ use App\Http\Controllers\Api\PackageController;
 */
 
 // مسارات المصادقة العامة - 5 طلبات في الدقيقة للضيوف
-Route::middleware('throttle:guest')->group(function () {
+Route::middleware('throttle:5,1')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/password/reset-link', [\App\Http\Controllers\Api\PasswordResetController::class, 'sendResetLink']);
 });
 
-// المسارات المحمية بالمصادقة - 8 طلبات في الدقيقة للمستخدمين
-Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+// المسارات المحمية بالمصادقة - 60 طلبات في الدقيقة للمستخدمين
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // معلومات المستخدم الحالي - مع cache
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -38,7 +38,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Team Management - إدارة الفرق
     Route::post('/team/create', [TeamController::class, 'create']); // إنشاء فريق
-    Route::get('/my-team', [TeamController::class, 'myTeam']); // عرض فريقي
+    Route::get('/my-team', [TeamController::class, 'myTeam'])
+        ->middleware('throttle:30,1'); // عرض فريقي - 30 طلب في الدقيقة
     Route::post('/team/update-name', [TeamController::class, 'updateName']); // تعديل اسم الفريق
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
     
@@ -47,6 +48,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->middleware('throttle:10,1'); // 10 مهام في الدقيقة
     Route::get('/team/tasks', [TeamController::class, 'getTeamTasks']); // عرض مهام الفريق
     Route::get('/team/rewards', [TeamController::class, 'getTeamRewards']); // عرض مكافآت الفريق
+    Route::get('/team/member-stats', [TeamController::class, 'getMemberStats']); // إحصائيات عضو محدد
     Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks']); // عرض مهامي الشخصية
     Route::post('/tasks/complete-stage', [\App\Http\Controllers\Api\TaskController::class, 'completeStage'])
         ->middleware('throttle:20,1'); // 20 مرحلة في الدقيقة

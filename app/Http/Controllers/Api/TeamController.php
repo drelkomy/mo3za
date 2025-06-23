@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\CreateTeamRequest;
+use App\Http\Requests\Api\MyTeamRequest;
 use App\Http\Requests\Api\RemoveMemberRequest;
 use App\Http\Requests\Api\UpdateTeamNameRequest;
+use App\Http\Resources\MyTeamResource;
 use App\Http\Resources\TeamDetailResource;
 use App\Http\Resources\TeamResource;
 use App\Models\Team;
@@ -15,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use App\Services\TeamService;
 
 class TeamController extends Controller
 {
@@ -35,83 +38,34 @@ class TeamController extends Controller
         ], 201);
     }
     
-    public function myTeam(Request $request): JsonResponse
+    public function myTeam(MyTeamRequest $request, TeamService $teamService): JsonResponse
     {
-        $cacheKey = 'my_owned_team_' . auth()->id();
-        
-        $team = Cache::remember($cacheKey, 300, function () {
-            return Team::where('owner_id', auth()->id())
-                ->with(['members:id,name,email', 'owner:id,name,email'])
-                ->first();
-        });
+        $team = $teamService->getMyTeamOptimized(auth()->id());
         
         if (!$team) {
             return response()->json([
-                'message' => 'أنت لست مالك فريق - لا تملك فريقاً خاصاً بك',
-                'data' => null,
-                'is_owner' => false
+                'message' => 'لا تملك فريقاً',
+                'data' => null
             ]);
         }
         
-        // تطبيق pagination على الأعضاء
-        $page = $request->input('page', 1);
-        $perPage = $request->input('per_page', 10);
-        
-        $membersCacheKey = 'team_members_' . $team->id . '_page_' . $page . '_' . $perPage;
-        
-        $membersData = Cache::remember($membersCacheKey, 300, function () use ($team, $page, $perPage) {
-            $members = $team->members()
-                ->select(['users.id', 'users.name', 'users.email'])
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
-                
-            $total = $team->members()->count();
-            
-            return [
-                'members' => $members,
-                'total' => $total,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
-            ];
-        });
-        
-        // تحميل العلاقات للريسورس
-        $team->load('owner');
-        
-        $teamData = new TeamDetailResource($team);
-        $teamData->additional['members_meta'] = [
-            'total' => $membersData['total'],
-            'current_page' => $membersData['current_page'],
-            'per_page' => $membersData['per_page'],
-            'last_page' => $membersData['last_page']
-        ];
-        
         return response()->json([
-            'message' => 'تم جلب فريقك الذي تملكه بنجاح',
-            'data' => $teamData
-        ])->setMaxAge(300)->setPublic();
+            'message' => 'تم جلب فريقك بنجاح',
+            'data' => new MyTeamResource($team)
+        ])->setMaxAge(600)->setPublic();
     }
     
     public function updateName(UpdateTeamNameRequest $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json([
-                'message' => 'أنت لست مالك فريق - لا يمكنك تعديل الاسم'
-            ], 403);
-        }
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
         
         $team->update(['name' => $request->input('name')]);
         
         // تنظيف cache
         Cache::forget('my_owned_team_' . auth()->id());
         
-        // تحميل العلاقات للريسورس
-        $team = $team->fresh();
-        $team->load('owner');
+        // تحميل العلاقات في استعلام واحد
+        $team = Team::where('id', $team->id)->with('owner')->first();
         
         return response()->json([
             'message' => 'تم تعديل اسم الفريق بنجاح',
@@ -121,25 +75,12 @@ class TeamController extends Controller
     
     public function removeMember(RemoveMemberRequest $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json([
-                'message' => 'أنت لست مالك فريق - لا يمكنك حذف أعضاء'
-            ], 403);
-        }
-        
-        // فحص إضافي للتأكد من الملكية
-        if ($team->owner_id !== auth()->id()) {
-            return response()->json([
-                'message' => 'أنت لست مالك هذا الفريق - لا يمكنك حذف أعضاء'
-            ], 403);
-        }
+        $team = Team::with('members')->where('owner_id', auth()->id())->firstOrFail();
         
         $memberId = $request->input('member_id');
         
         // التحقق من وجود العضو في الفريق
-        if (!$team->members()->where('user_id', $memberId)->exists()) {
+        if (!$team->members->contains('id', $memberId)) {
             return response()->json([
                 'message' => 'العضو غير موجود في فريقك'
             ], 404);
@@ -159,11 +100,7 @@ class TeamController extends Controller
 
     public function createTask(\App\Http\Requests\Api\CreateTaskRequest $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
 
         $taskService = app(\App\Services\TaskService::class);
         $subscription = auth()->user()->activeSubscription;
@@ -269,11 +206,7 @@ class TeamController extends Controller
 
     public function getTeamTasks(Request $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
 
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -297,12 +230,14 @@ class TeamController extends Controller
                 $query->where('assigned_to', $assignedTo);
             }
             
+            // فصل استعلام العداد
+            $countQuery = clone $query;
+            $total = $countQuery->count();
+            
             $tasks = $query->orderBy('created_at', 'desc')
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
-            
-            $total = $query->count();
             
             return [
                 'tasks' => $tasks,
@@ -327,11 +262,7 @@ class TeamController extends Controller
 
     public function getTeamRewards(Request $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())->first();
-        
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
 
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -355,12 +286,15 @@ class TeamController extends Controller
                 $query->where('user_id', $userId);
             }
             
+            // فصل استعلامات العداد والمجموع
+            $countQuery = clone $query;
+            $sumQuery = clone $query;
+            $total = $countQuery->count();
+            $totalAmount = $sumQuery->sum('amount');
+            
             $rewards = $query->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
-            
-            $total = $query->count();
-            $totalAmount = $query->sum('amount');
             
             return [
                 'rewards' => $rewards,
@@ -382,6 +316,55 @@ class TeamController extends Controller
                 'per_page' => $rewardsData['per_page'],
                 'last_page' => $rewardsData['last_page']
             ]
+        ])->setMaxAge(300)->setPublic();
+    }
+
+    public function getMemberStats(Request $request): JsonResponse
+    {
+        $team = Team::where('owner_id', auth()->id())->firstOrFail();
+
+        $memberId = $request->input('member_id');
+        
+        if (!$team->members()->where('user_id', $memberId)->exists()) {
+            return response()->json(['message' => 'العضو غير موجود في فريقك'], 404);
+        }
+
+        $cacheKey = "member_stats_{$team->id}_{$memberId}";
+        
+        $memberStats = Cache::remember($cacheKey, 300, function () use ($team, $memberId) {
+            $tasks = \App\Models\Task::where('team_id', $team->id)
+                ->where('assigned_to', $memberId)
+                ->select(['id', 'title', 'status', 'progress', 'reward_amount'])
+                ->get();
+            
+            $totalTasks = $tasks->count();
+            $completedTasks = $tasks->where('status', 'completed')->count();
+            $averageProgress = $totalTasks > 0 ? $tasks->avg('progress') : 0;
+            
+            return [
+                'tasks' => $tasks->map(function ($task) {
+                    return [
+                        'id' => $task->id,
+                        'title' => $task->title,
+                        'status' => $task->status,
+                        'progress' => $task->progress,
+                        'reward_amount' => $task->reward_amount,
+                    ];
+                }),
+                'stats' => [
+                    'total_tasks' => $totalTasks,
+                    'completed_tasks' => $completedTasks,
+                    'pending_tasks' => $tasks->where('status', 'pending')->count(),
+                    'in_progress_tasks' => $tasks->where('status', 'in_progress')->count(),
+                    'average_progress' => round($averageProgress, 1),
+                    'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 1) : 0,
+                ]
+            ];
+        });
+        
+        return response()->json([
+            'message' => 'تم جلب إحصائيات العضو بنجاح',
+            'data' => $memberStats
         ])->setMaxAge(300)->setPublic();
     }
 }
