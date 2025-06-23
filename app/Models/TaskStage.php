@@ -14,12 +14,13 @@ class TaskStage extends Model implements HasMedia
 
     protected $fillable = [
         'task_id', 'stage_number', 'title', 'description', 
-        'status', 'completed_at', 'proof_notes', 'attachments'
+        'status', 'completed_at', 'proof_notes', 'proof_files'
     ];
 
     protected $casts = [
         'completed_at' => 'datetime',
         'stage_number' => 'integer',
+        'proof_files' => 'array',
     ];
 
 

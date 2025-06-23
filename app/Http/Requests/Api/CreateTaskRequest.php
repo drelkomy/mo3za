@@ -14,38 +14,37 @@ class CreateTaskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => 'required|string|max:255',
-            'description' => 'required|string',
-            'start_date' => 'required|date|after_or_equal:today',
-            'duration_days' => 'required|integer|min:1|max:365',
-            'total_stages' => 'required|integer|min:1|max:20',
-            'reward_type' => 'required|in:cash,other',
-            'reward_amount' => 'required_if:reward_type,cash|nullable|numeric|min:0',
-            'reward_description' => 'required_if:reward_type,other|nullable|string|max:500',
-            'is_multiple' => 'boolean',
-            'assigned_members' => 'required_if:is_multiple,true|array|min:1',
-            'assigned_members.*' => 'exists:users,id',
-            'assigned_to' => 'required_if:is_multiple,false|exists:users,id',
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string'],
+            'receiver_id' => ['required', 'integer', 'exists:users,id'],
+            'due_date' => ['nullable', 'date', 'after:today'],
+            'priority' => ['nullable', 'string', 'in:urgent,normal,high,medium,low'],
+            'total_stages' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'stages' => ['nullable', 'array'],
+            'stages.*.title' => ['required_with:stages', 'string', 'max:255'],
+            'stages.*.description' => ['nullable', 'string'],
+            'reward_amount' => ['nullable', 'numeric', 'min:0'],
+            'reward_type' => ['nullable', 'string', 'in:cash,other'],
+            'reward_description' => ['nullable', 'string'],
+            'is_multiple' => ['nullable', 'boolean'],
+            'selected_members' => ['nullable', 'array', 'required_if:is_multiple,true'],
+            'selected_members.*' => ['integer', 'exists:users,id'],
         ];
     }
-
+    
     public function messages(): array
     {
         return [
             'title.required' => 'عنوان المهمة مطلوب',
             'description.required' => 'وصف المهمة مطلوب',
-            'start_date.required' => 'تاريخ البداية مطلوب',
-            'start_date.after_or_equal' => 'تاريخ البداية يجب أن يكون اليوم أو بعده',
-            'duration_days.required' => 'المدة الزمنية مطلوبة',
-            'duration_days.min' => 'المدة الزمنية يجب أن تكون يوم واحد على الأقل',
-            'total_stages.required' => 'عدد المراحل مطلوب',
-            'total_stages.min' => 'يجب أن يكون هناك مرحلة واحدة على الأقل',
-            'reward_type.required' => 'نوع المكافأة مطلوب',
-            'reward_type.in' => 'نوع المكافأة يجب أن يكون نقدي أو آخر',
-            'reward_amount.required_if' => 'مبلغ المكافأة مطلوب للمكافآت النقدية',
-            'reward_description.required_if' => 'وصف المكافأة مطلوب للمكافآت غير النقدية',
-            'assigned_members.required_if' => 'يجب تحديد الأعضاء للمهمة المتعددة',
-            'assigned_to.required_if' => 'يجب تحديد المكلف بالمهمة',
+            'receiver_id.required' => 'معرف المستلم مطلوب',
+            'receiver_id.exists' => 'المستلم غير موجود',
+            'priority.in' => 'الأولوية يجب أن تكون إما normal، urgent، high، medium أو low',
+            'due_date.after' => 'تاريخ الاستحقاق يجب أن يكون بعد اليوم',
+            'reward_amount.min' => 'قيمة المكافأة يجب أن تكون أكبر من أو تساوي صفر',
+            'reward_type.in' => 'نوع المكافأة يجب أن يكون إما cash أو other',
+            'selected_members.required_if' => 'يجب تحديد الأعضاء المشاركين للمهمة المتعددة',
+            'selected_members.*.exists' => 'أحد الأعضاء المحددين غير موجود',
         ];
     }
 }

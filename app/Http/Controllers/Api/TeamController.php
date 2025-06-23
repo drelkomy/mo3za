@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\CreateTeamRequest;
+use App\Http\Requests\Api\CreateTaskRequest;
 use App\Http\Requests\Api\RemoveMemberRequest;
 use App\Http\Requests\Api\UpdateTeamNameRequest;
 use App\Http\Resources\TeamDetailResource;
@@ -11,6 +12,7 @@ use App\Http\Resources\TaskResource;
 use App\Http\Resources\RewardResource;
 use App\Models\Team;
 use App\Models\Task;
+use App\Models\TaskStage;
 use App\Models\Reward;
 use App\Models\User;
 use App\Models\TeamMember;
@@ -271,6 +273,110 @@ class TeamController extends Controller
                 'last_page' => $rewardsData['last_page']
             ]
         ])->setMaxAge(300)->setPublic();
+    }
+    
+    /**
+     * إنشاء مهمة جديدة للفريق
+     */
+    public function createTask(CreateTaskRequest $request): JsonResponse
+    {
+        // التحقق من وجود فريق للمستخدم
+        $team = $this->getUserTeam();
+        if (!$team) {
+            return response()->json([
+                'message' => 'لا تملك فريقاً',
+                'data' => null
+            ], 404);
+        }
+        
+        // التحقق من أن المستلم عضو في الفريق
+        $receiverId = $request->input('receiver_id');
+        $isMember = $team->members()->where('user_id', $receiverId)->exists() || $team->owner_id == $receiverId;
+        
+        if (!$isMember) {
+            return response()->json([
+                'message' => 'المستلم ليس عضواً في الفريق',
+                'data' => null
+            ], 400);
+        }
+        
+        // إنشاء المهمة
+        $task = Task::create([
+            'title' => $request->input('title'),
+            'description' => $request->input('description'),
+            'receiver_id' => $receiverId,
+            'creator_id' => auth()->id(),
+            'team_id' => $team->id,
+            'status' => 'pending',
+            'progress' => 0,
+            'priority' => $request->input('priority', 'normal'),
+            'due_date' => $request->input('due_date'),
+            'total_stages' => $request->input('total_stages', 3),
+            'reward_amount' => $request->input('reward_amount'),
+            'reward_type' => $request->input('reward_type', 'cash'),
+            'reward_description' => $request->input('reward_description'),
+            'is_multiple' => $request->input('is_multiple', false),
+            'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
+        ]);
+        
+        // إنشاء مراحل المهمة
+        if ($request->has('stages')) {
+            $stages = $request->input('stages');
+            foreach ($stages as $index => $stageData) {
+                TaskStage::create([
+                    'task_id' => $task->id,
+                    'title' => $stageData['title'],
+                    'description' => $stageData['description'] ?? null,
+                    'stage_number' => $index + 1,
+                    'status' => 'pending',
+                ]);
+            }
+        } else {
+            // إنشاء مراحل افتراضية
+            $defaultStages = [
+                ['title' => 'البداية', 'description' => 'مرحلة البدء في المهمة'],
+                ['title' => 'التنفيذ', 'description' => 'مرحلة تنفيذ المهمة'],
+                ['title' => 'الإنهاء', 'description' => 'مرحلة إنهاء المهمة']
+            ];
+            
+            foreach ($defaultStages as $index => $stageData) {
+                TaskStage::create([
+                    'task_id' => $task->id,
+                    'title' => $stageData['title'],
+                    'description' => $stageData['description'],
+                    'stage_number' => $index + 1,
+                    'status' => 'pending',
+                ]);
+            }
+        }
+        
+        // حذف الكاش
+        Cache::forget("team_tasks_{$team->id}_*");
+        Cache::forget("my_tasks_{$receiverId}_*");
+        
+        // إذا كانت المهمة متعددة، قم بإضافة الأعضاء المحددين
+        if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
+            $selectedMembers = $request->input('selected_members');
+            foreach ($selectedMembers as $memberId) {
+                // تحقق من أن العضو موجود في الفريق
+                $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
+                if ($isMember) {
+                    $task->members()->attach($memberId, [
+                        'is_primary' => ($memberId == $receiverId),
+                        'status' => 'pending',
+                        'completion_percentage' => 0
+                    ]);
+                }
+            }
+        }
+        
+        // تحميل العلاقات
+        $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages', 'members:id,name,email']);
+        
+        return response()->json([
+            'message' => 'تم إنشاء المهمة بنجاح',
+            'data' => new TaskResource($task)
+        ], 201);
     }
     
     /**
