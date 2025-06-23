@@ -109,6 +109,8 @@ class SubscriptionResource extends Resource
                         'active' => 'success',
                         'expired' => 'danger',
                         'cancelled' => 'warning',
+                        'pending' => 'info',
+                        default => 'gray',
                     })
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tasks_created')

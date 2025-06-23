@@ -11,10 +11,12 @@ class PaymentResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'package_name' => $this->package->name,
-            'amount' => $this->price_paid,
+            'order_id' => $this->order_id,
+            'amount' => $this->amount,
+            'currency' => $this->currency,
             'status' => $this->status,
-            'date' => $this->created_at->format('Y-m-d H:i:s')
+            'payment_url' => $this->when($this->status === 'pending', $this->payment_url),
+            'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
         ];
     }
 }

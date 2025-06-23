@@ -6,8 +6,12 @@ use Illuminate\Http\Request;
 use App\Services\PayTabsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Models\Package;
 use App\Models\Payment;
+
+use App\Http\Resources\PaymentResource;
+use App\Http\Requests\Api\PaymentRequest;
 
 class PaymentController extends Controller
 {
@@ -423,13 +427,12 @@ class PaymentController extends Controller
      * @param Request $request Package payment request
      * @return \Illuminate\Http\RedirectResponse Payment redirect response
      */
-    public function pay(Request $request)
+    public function pay(PaymentRequest $request)
     {
-        $request->validate([
-            'package_id' => 'required|exists:packages,id',
-        ]);
+        $packageId = $request->input('package_id') ?? $request->route('package_id');
+        $request->merge(['package_id' => $packageId]);
 
-        $package = Package::findOrFail($request->package_id);
+        $package = Cache::remember("package_{$request->package_id}", 3600, fn() => Package::findOrFail($request->package_id));
         $user = auth()->user();
 
         if (!$user) {
@@ -444,7 +447,7 @@ class PaymentController extends Controller
         $payment = Payment::create([
             'user_id' => $user->id,
             'package_id' => $package->id,
-            'order_id' => 'ORDER-' . now()->timestamp,
+            'order_id' => 'ORDER-' . now()->timestamp . '-' . uniqid(),
             'amount' => $package->price,
             'currency' => 'SAR',
             'customer_name' => $user->name,
@@ -461,19 +464,45 @@ class PaymentController extends Controller
             'currency' => 'SAR',
             'customer_name' => $user->name,
             'customer_email' => $user->email,
-            'customer_phone' => $user->phone ?? null,
+            'customer_phone' => $user->phone ?? '966500000000',
             'order_id' => $payment->order_id,
             'description' => $payment->description,
+            'user_id' => $user->id,
+            'package_id' => $package->id,
         ];
 
         try {
+            Log::info('Creating PayTabs payment', [
+                'payment_data' => $paymentData,
+                'user_id' => $user->id
+            ]);
+            
             $response = $this->payTabsService->createPaymentPage($paymentData);
+            
+            Log::info('PayTabs response received', [
+                'response' => $response
+            ]);
 
-            if ($response['success']) {
+            if ($response['success'] && !empty($response['payment_url'])) {
+                // Update payment with transaction reference
+                $payment->update([
+                    'transaction_id' => $response['transaction_ref']
+                ]);
+                
+                Log::info('Redirecting to payment URL', [
+                    'payment_url' => $response['payment_url'],
+                    'transaction_ref' => $response['transaction_ref']
+                ]);
                 return redirect()->away($response['payment_url']);
             }
 
-            throw new \RuntimeException($response['message'] ?? 'Failed to create payment');
+            Log::error('Payment creation failed', [
+                'response' => $response,
+                'payment_url_empty' => empty($response['payment_url']),
+                'success' => $response['success'] ?? false
+            ]);
+            
+            throw new \RuntimeException($response['message'] ?? 'Failed to create payment or missing payment URL');
 
         } catch (\Exception $e) {
             Log::error('Payment creation failed', [

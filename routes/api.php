@@ -63,10 +63,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/subscriptions', [\App\Http\Controllers\Api\SubscriptionController::class, 'index']); // عرض الاشتراكات
     Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']); // إلغاء اشتراك
     
+
     // Payment Callbacks - استقبال نتائج الدفع
-    Route::post('/payment/callback', [\App\Http\Controllers\Api\PaymentController::class, 'callback']); // webhook من بوابة الدفع
-    Route::get('/payment/success/{subscription}', [\App\Http\Controllers\Api\PaymentController::class, 'success']); // نجح الدفع
-    Route::get('/payment/cancel/{subscription}', [\App\Http\Controllers\Api\PaymentController::class, 'cancel']); // إلغاء الدفع
+    Route::post('/payment/callback', [\App\Http\Controllers\Api\ApiPaymentController::class, 'callback']); // webhook من بوابة الدفع
+    Route::get('/payment/success/{subscription}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'success']); // نجح الدفع
+    Route::get('/payment/cancel/{subscription}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'cancel']); // إلغاء الدفع
 
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);

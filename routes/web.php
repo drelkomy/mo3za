@@ -24,7 +24,9 @@ Route::get('/download-attachment/{path}', function ($path) {
 // --------------------------
 // Payment Routes (UI)
 // --------------------------
-Route::match(['get', 'post'], '/payment/pay', [PaymentController::class, 'pay'])->name('payment.pay');
+Route::match(['get', 'post'], '/payment/pay', [PaymentController::class, 'pay'])
+    ->middleware(['auth', 'throttle:10,1'])
+    ->name('payment.pay');
 
 // --------------------------
 // PayTabs Integration
@@ -45,11 +47,6 @@ Route::prefix('paytabs')->name('paytabs.')->middleware(['throttle:60,1'])->group
         ->name('webhook')
         ->withoutMiddleware(['web', 'csrf']);
 
-    // مسارات النجاح / الفشل / الإلغاء
-    Route::get('/success', [PaymentController::class, 'success'])->name('success');
-    Route::get('/failed', [PaymentController::class, 'failed'])->name('failed');
-    Route::get('/cancel', [PaymentController::class, 'cancel'])->name('cancel');
-
     // التحقق من حالة الدفع - محدود الطلبات
     Route::match(['get', 'post'], '/check-status', [PaymentController::class, 'checkPaymentStatus'])
         ->middleware(['throttle:30,1'])
@@ -61,10 +58,11 @@ Route::prefix('paytabs')->name('paytabs.')->middleware(['throttle:60,1'])->group
         ->name('verify');
 
     // لتفعيل الدفع يدويًا في بيئة التطوير فقط
-    if (app()->environment('local')) {
-        Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])->name('activate');
-        Route::get('/process-payment/{order_id}', [PaymentController::class, 'processLocalPayment'])->name('process.local');
-    }
+    Route::match(['get', 'post'], '/activate/{transaction_ref}', [PaymentController::class, 'activate'])
+        ->withoutMiddleware(['csrf'])
+        ->name('activate');
+    Route::get('/process-payment/{order_id}', [PaymentController::class, 'processLocalPayment'])
+        ->name('process.local');
 
     // صفحة مؤقتة تعرض نتيجة الدفع وتقوم بإعادة التوجيه تلقائيًا
     Route::get('/result-redirect', function (Request $request) {
@@ -76,6 +74,17 @@ Route::prefix('paytabs')->name('paytabs.')->middleware(['throttle:60,1'])->group
     // دعم إعادة التوجيه من PayTabs إذا كانت غير مباشرة
     Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])->name('payment.redirect');
 });
+
+// مسارات النجاح / الفشل / الإلغاء (خارج CSRF)
+Route::match(['get', 'post'], '/paytabs/success', [PaymentController::class, 'success'])
+    ->withoutMiddleware(['web', 'csrf'])
+    ->name('paytabs.success');
+Route::match(['get', 'post'], '/paytabs/failed', [PaymentController::class, 'failed'])
+    ->withoutMiddleware(['web', 'csrf'])
+    ->name('paytabs.failed');
+Route::match(['get', 'post'], '/paytabs/cancel', [PaymentController::class, 'cancel'])
+    ->withoutMiddleware(['web', 'csrf'])
+    ->name('paytabs.cancel');
 
 // إعادة التوجيه المختصر في حالة طلب خارجي
 Route::get('/payment-redirect', [PaymentRedirectController::class, 'handleRedirect'])->name('payment.redirect');

@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
-class PaymentController extends Controller
+class ApiPaymentController extends Controller
 {
     public function callback(Request $request): JsonResponse
     {
