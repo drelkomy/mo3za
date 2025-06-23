@@ -50,6 +50,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/my-team', [TeamController::class, 'myTeam']); // عرض فريقي
     Route::post('/team/update-name', [TeamController::class, 'updateName']); // تعديل اسم الفريق
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
+    
+    // Task Management - إدارة المهام
+    Route::post('/team/create-task', [TeamController::class, 'createTask'])
+        ->middleware('throttle:10,1'); // 10 مهام في الدقيقة
+    Route::get('/team/tasks', [TeamController::class, 'getTeamTasks']); // عرض مهام الفريق
+    Route::get('/team/rewards', [TeamController::class, 'getTeamRewards']); // عرض مكافآت الفريق
+    Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks']); // عرض مهامي الشخصية
+    Route::post('/tasks/complete-stage', [\App\Http\Controllers\Api\TaskController::class, 'completeStage'])
+        ->middleware('throttle:20,1'); // 20 مرحلة في الدقيقة
+    Route::post('/tasks/close', [\App\Http\Controllers\Api\TaskController::class, 'closeTask'])
+        ->middleware('throttle:10,1'); // 10 إغلاق في الدقيقة
+    Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards']); // عرض مكافآتي
 
     // Packages & Subscriptions - الباقات والاشتراكات
     Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات المدفوعة

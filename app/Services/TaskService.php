@@ -9,40 +9,61 @@ class TaskService
 {
     public function createTaskStages(Task $task): void
     {
+        $startDate = \Carbon\Carbon::parse($task->start_date);
+        $endDate = \Carbon\Carbon::parse($task->due_date);
+        $daysPerStage = $task->duration_days / $task->total_stages;
+        
         for ($i = 1; $i <= $task->total_stages; $i++) {
+            $stageStartDate = $startDate->copy()->addDays(floor(($i - 1) * $daysPerStage));
+            
+            // ضبط المرحلة الأخيرة لتنتهي في التاريخ المحدد
+            if ($i === $task->total_stages) {
+                $stageEndDate = $endDate;
+            } else {
+                $stageEndDate = $startDate->copy()->addDays(ceil($i * $daysPerStage) - 1);
+            }
+            
             TaskStage::create([
                 'task_id' => $task->id,
                 'stage_number' => $i,
                 'title' => "المرحلة {$i}",
                 'description' => "وصف المرحلة {$i} من المهمة: {$task->title}",
                 'status' => 'pending',
+                'start_date' => $stageStartDate,
+                'due_date' => $stageEndDate,
             ]);
         }
     }
 
     public function updateTaskProgress(Task $task): void
     {
-        $completedStages = $task->stages()->where('status', 'completed')->count();
-        $totalStages = $task->stages()->count();
+        $stages = $task->stages;
+        $completed = $stages->where('status', 'completed')->count();
+        $total = $stages->count();
+        $progress = $total > 0 ? ($completed / $total) * 100 : 0;
         
-        $progress = $totalStages > 0 ? ($completedStages / $totalStages) * 100 : 0;
-        
-        $task->update([
+        $task->fill([
             'progress' => round($progress),
-            'status' => $progress == 100 ? 'completed' : ($progress > 0 ? 'in_progress' : 'pending'),
-            'completed_at' => $progress == 100 ? now() : null,
-        ]);
+            'status' => match (true) {
+                $progress === 100.0 => 'completed',
+                $progress > 0 => 'in_progress',
+                default => 'pending',
+            },
+            'completed_at' => $progress === 100.0 ? now() : null,
+        ])->save();
     }
 
     public function completeStage(TaskStage $stage, string $proofNotes = null): void
     {
-        $stage->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-            'proof_notes' => $proofNotes,
-        ]);
+        if ($stage->status !== 'completed') {
+            $stage->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'proof_notes' => $proofNotes,
+            ]);
 
-        $this->updateTaskProgress($stage->task);
+            $this->updateTaskProgress($stage->task);
+        }
     }
 
     public function completeTaskByLeader(Task $task, bool $distributeReward = true): void
