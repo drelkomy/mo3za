@@ -72,4 +72,30 @@ class SubscriptionController extends Controller
             'data' => new TrialStatusResource($trialData)
         ])->setMaxAge(300)->setPublic();
     }
+
+    public function currentSubscription(): JsonResponse
+    {
+        $cacheKey = 'current_subscription_' . auth()->id();
+        
+        $subscription = Cache::remember($cacheKey, 300, function () {
+            return auth()->user()->subscriptions()
+                ->with('package')
+                ->where('status', 'active')
+                ->first();
+        });
+        
+        if (!$subscription) {
+            return response()->json([
+                'message' => 'لا يوجد اشتراك نشط حالياً',
+                'data' => null,
+                'has_subscription' => false
+            ]);
+        }
+        
+        return response()->json([
+            'message' => 'تم جلب اشتراكك الحالي بنجاح',
+            'data' => new \App\Http\Resources\CurrentSubscriptionResource($subscription),
+            'has_subscription' => true
+        ])->setMaxAge(300)->setPublic();
+    }
 }
