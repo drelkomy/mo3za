@@ -16,9 +16,9 @@ class Task extends Model implements HasMedia
 
     protected $fillable = [
         'title', 'description', 'terms', 'comment', 'status', 'progress', 
-        'is_active', 'creator_id', 'receiver_id', 'subscription_id', 'team_id',
-        'reward_amount', 'reward_description', 'start_date', 'due_date', 
-        'completed_at', 'duration_days', 'total_stages', 'priority', 
+        'is_active', 'creator_id', 'receiver_id', 'assigned_to', 'subscription_id', 'team_id',
+        'reward_amount', 'reward_description', 'reward_distributed', 'reward_distributed_at',
+        'start_date', 'due_date', 'completed_at', 'duration_days', 'total_stages', 'priority', 
         'task_status', 'is_multiple', 'reward_type', 'selected_members'
     ];
 
@@ -26,6 +26,8 @@ class Task extends Model implements HasMedia
         'is_active' => 'boolean',
         'progress' => 'integer',
         'reward_amount' => 'decimal:2',
+        'reward_distributed' => 'boolean',
+        'reward_distributed_at' => 'datetime',
         'start_date' => 'date',
         'due_date' => 'date',
         'completed_at' => 'datetime',
@@ -44,6 +46,11 @@ class Task extends Model implements HasMedia
     public function receiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'receiver_id');
+    }
+
+    public function assignedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 
     public function subscription(): BelongsTo

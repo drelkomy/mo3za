@@ -3,7 +3,7 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="text-lg font-semibold">{{ __('الباقة التجريبية') }}</h2>
-                <p class="text-sm text-gray-500">{{ __('ابدأ تجربتك المجانية واحصل على 3 مهام.') }}</p>
+                <p class="text-sm text-gray-500">{{ __('ابدأ تجربتك المجانية واحصل على') }} {{ $trialPackage->max_tasks ?? 3 }} {{ __('مهام.') }}</p>
             </div>
             <x-filament::button wire:click="startTrial">
                 {{ __('ابدأ التجربة') }}

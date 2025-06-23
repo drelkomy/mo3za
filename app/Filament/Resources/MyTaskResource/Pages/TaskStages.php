@@ -71,6 +71,21 @@ class TaskStages extends Page implements HasTable
                 Tables\Columns\TextColumn::make('description')
                     ->label('ملاحظات الإثبات')
                     ->limit(50),
+                
+                Tables\Columns\TextColumn::make('proof_link')
+                    ->label('رابط الإثبات')
+                    ->formatStateUsing(function (?TaskStage $record) {
+                        if (!$record) return __('لا يوجد ملف');
+                        $media = $record->getMedia('proofs');
+                        return $media->isNotEmpty() ? __('تحميل') : __('لا يوجد ملف');
+                    })
+                    ->url(function (?TaskStage $record) {
+                        if (!$record) return null;
+                        $media = $record->getMedia('proofs');
+                        return $media->isNotEmpty() ? $media->last()->getUrl() : null;
+                    })
+                    ->openUrlInNewTab()
+                    ->visible(fn (?TaskStage $record): bool => $record && $record->getMedia('proofs')->isNotEmpty() && ($this->record->creator_id === auth()->id() || $this->record->receiver_id === auth()->id())),
             ])
             ->actions([
                 Tables\Actions\Action::make('complete_stage')
@@ -105,14 +120,72 @@ class TaskStages extends Page implements HasTable
                     ->action(function (TaskStage $record, array $data): void {
                         $record->update(['description' => $data['description']]);
                         // The Spatie component will handle the file uploads automatically.
+                        
+                        // Create or update StageCompletion record
+                        $completion = \App\Models\StageCompletion::updateOrCreate(
+                            ['task_stage_id' => $record->id, 'user_id' => auth()->id()],
+                            ['status' => 'pending', 'notes' => $data['description']]
+                        );
+                        
+                        // Get the uploaded media files
+                        $media = $record->getMedia('proofs');
+                        if ($media->isNotEmpty()) {
+                            $latestMedia = $media->last();
+                            $completion->update([
+                                'proof_path' => $latestMedia->getPath(),
+                                'proof_type' => $latestMedia->mime_type,
+                            ]);
+                        }
+                        
                         Notification::make()
                             ->title('تم رفع الإثبات بنجاح')
+                            ->body('يمكنك تحميل الإثبات من خلال الرابط التالي: ' . ($media->isNotEmpty() ? $latestMedia->getUrl() : 'لا يوجد ملف مرفق'))
                             ->success()
                             ->send();
                     })
                     ->visible(fn (TaskStage $record): bool => 
                         $record->status !== 'completed' && $this->record->receiver_id === auth()->id()
                     ),
+
+                Tables\Actions\Action::make('close_task')
+                    ->label('إغلاق المهمة')
+                    ->icon('heroicon-o-lock-closed')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->form([
+                        \Filament\Forms\Components\Select::make('status')
+                            ->label('حالة المهمة')
+                            ->options([
+                                'completed' => 'تم الإنجاز',
+                                'not_completed' => 'لم يتم الإنجاز',
+                            ])
+                            ->required(),
+                        \Filament\Forms\Components\Toggle::make('distribute_reward')
+                            ->label('توزيع المكافأة')
+                            ->visible(fn ($get) => $get('status') === 'completed' && $this->record->reward_amount > 0),
+                    ])
+                    ->action(function (array $data): void {
+                        $taskService = app(\App\Services\TaskService::class);
+                        if ($data['status'] === 'completed') {
+                            $taskService->completeTaskByLeader($this->record, $data['distribute_reward'] ?? false);
+                            Notification::make()
+                                ->title('تم إغلاق المهمة بنجاح')
+                                ->body('تم إنجاز المهمة' . ($data['distribute_reward'] ? ' مع توزيع المكافأة.' : ' بدون توزيع المكافأة.'))
+                                ->success()
+                                ->send();
+                        } else {
+                            $this->record->update([
+                                'status' => 'not_completed',
+                                'completed_at' => now(),
+                            ]);
+                            Notification::make()
+                                ->title('تم إغلاق المهمة بنجاح')
+                                ->body('تم إغلاق المهمة بدون إنجاز.')
+                                ->success()
+                                ->send();
+                        }
+                    })
+                    ->visible(fn (): bool => $this->record->creator_id === auth()->id()),
             ])
             ->defaultSort('stage_number');
     }

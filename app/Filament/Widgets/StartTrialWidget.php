@@ -13,6 +13,13 @@ class StartTrialWidget extends Widget
 
     protected int | string | array $columnSpan = 'full';
 
+    public $trialPackage;
+    
+    public function mount(): void
+    {
+        $this->trialPackage = \App\Models\Package::where('name', 'الباقة التجريبية')->first();
+    }
+
     public function startTrial(SubscriptionService $subscriptionService): void
     {
         $user = Filament::auth()->user();

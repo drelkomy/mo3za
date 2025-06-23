@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Package;
 use App\Models\Subscription;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 class SubscriptionService
 {
@@ -81,8 +82,8 @@ class SubscriptionService
         if ($subscription->tasks_created >= $subscription->max_tasks) {
                 $subscription->update(['status' => 'expired']);
                 
-                // Log the expiration
-                Log::info('Subscription expired due to tasks limit', [
+                // Log the expiration and note the need for user redirection
+                Log::info('Subscription expired due to tasks limit. User should be redirected to renewal page.', [
                     'subscription_id' => $subscription->id,
                     'user_id' => $subscription->user_id,
                     'tasks_created' => $subscription->tasks_created,

@@ -45,12 +45,34 @@ class TaskService
         $this->updateTaskProgress($stage->task);
     }
 
-    public function completeTaskByLeader(Task $task): void
+    public function completeTaskByLeader(Task $task, bool $distributeReward = true): void
     {
         $task->update([
             'status' => 'completed',
             'progress' => 100,
             'completed_at' => now(),
+        ]);
+
+        if ($distributeReward && $task->reward_amount > 0 && $task->assigned_to) {
+            $this->distributeReward($task);
+        }
+    }
+
+    private function distributeReward(Task $task): void
+    {
+        \App\Models\Reward::create([
+            'task_id' => $task->id,
+            'user_id' => $task->assigned_to,
+            'amount' => $task->reward_amount,
+            'status' => 'received',
+            'distributed_at' => now(),
+            'received_at' => now(),
+            'distributed_by' => $task->creator_id,
+        ]);
+
+        $task->update([
+            'reward_distributed' => true,
+            'reward_distributed_at' => now(),
         ]);
     }
 }

@@ -36,12 +36,13 @@ class SubscriptionStatsWidget extends StatsOverviewWidget
         $totalRewards   = Task::where('receiver_id', $user->id)->sum('reward_amount');
 
         return [
+            Card::make('حالة الاشتراك', 'أنت مشترك في باقة بالفعل')
+                ->description('الباقة: ' . ($subscription->package->name ?? 'غير محدد'))
+                ->color('primary'),
             Card::make('المهام المتبقية', $remainingTasks)
-                ->description('من أصل ' . $subscription->max_tasks)
+                ->description('من أصل ' . $subscription->max_tasks . ' (تم استخدام ' . $subscription->tasks_created . ')')
                 ->color('success'),
-            Card::make('عدد الفرق', $teamsCount)
-                ->color('info'),
-            Card::make('إجمالي المكافآت', number_format($totalRewards, 2) . ' ﷼')
+            Card::make('إجمالي المكافآت', Task::where('receiver_id', $user->id)->count())
                 ->color('primary'),
             Card::make('المهام المنجزة', $completedTasks)
                 ->color('success'),
