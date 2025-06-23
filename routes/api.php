@@ -3,7 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\TeamJoinRequestController;
+
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\PackageController;
 
@@ -36,15 +36,6 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // تحديث بيانات البروفايل
     Route::post('/profile', [AuthController::class, 'updateProfile']);
 
-    // Team Join Requests - طلبات الانضمام
-    Route::post('/join-request', [TeamJoinRequestController::class, 'store']); // إرسال طلب
-    Route::get('/join-requests', [TeamJoinRequestController::class, 'index']); // طلباتي المرسلة - مع cache
-    Route::get('/join-requests/received', [TeamJoinRequestController::class, 'received']); // طلبات مرسلة لي - مع cache
-    Route::patch('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'update']); // قبول/رفض
-    Route::post('/join-requests/update-status', [TeamJoinRequestController::class, 'updateStatus']); // قبول/رفض باستخدام POST
-    Route::delete('/join-requests/{joinRequest}', [TeamJoinRequestController::class, 'destroy']); // حذف
-    Route::post('/join-requests/delete', [TeamJoinRequestController::class, 'deleteRequest']); // حذف باستخدام POST
-
     // Team Management - إدارة الفرق
     Route::post('/team/create', [TeamController::class, 'create']); // إنشاء فريق
     Route::get('/my-team', [TeamController::class, 'myTeam']); // عرض فريقي
@@ -76,6 +67,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']); // إلغاء اشتراك
     Route::get('/trial-status', [\App\Http\Controllers\Api\SubscriptionController::class, 'trialStatus']); // حالة الاشتراك التجريبي
     Route::get('/current-subscription', [\App\Http\Controllers\Api\SubscriptionController::class, 'currentSubscription']); // اشتراكي الحالي
+    
+    // Team Invitations - دعوات الفريق
+    Route::post('/invitations/send', [\App\Http\Controllers\Api\InvitationController::class, 'send'])
+        ->middleware('throttle:5,1'); // إرسال دعوة
+    Route::post('/invitations/respond', [\App\Http\Controllers\Api\InvitationController::class, 'respond']); // قبول/رفض
+    Route::get('/team/invitations', [\App\Http\Controllers\Api\InvitationController::class, 'teamInvitations']); // دعوات الفريق
+    Route::get('/my-invitations', [\App\Http\Controllers\Api\InvitationController::class, 'myInvitations']); // دعواتي
+    Route::post('/invitations/delete', [\App\Http\Controllers\Api\InvitationController::class, 'delete']); // حذف دعوة
     
 
     // Payment Callbacks - استقبال نتائج الدفع
