@@ -136,16 +136,12 @@ class InvitationController extends Controller
                 return response()->json(['message' => 'غير مصادق', 'details' => 'No authenticated user found. Please ensure you are logged in or have provided valid API credentials.'], 401);
             }
             
-            $page = $request->input('page', 1);
-            $perPage = min($request->input('per_page', 10), 50);
             $userId = auth()->id();
             
             // جمع طلبات الانضمام المستلمة من جدول طلبات الانضمام
             $received = \App\Models\JoinRequest::where('user_id', $userId)
                 ->with(['team:id,name', 'user:id,name,avatar_url'])
                 ->orderBy('created_at', 'desc')
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
                 ->get()
                 ->map(function($req) {
                     $req->type = 'received';
@@ -157,22 +153,11 @@ class InvitationController extends Controller
                 
             $total = \App\Models\JoinRequest::where('user_id', $userId)->count();
             
-            $requestsData = [
-                'requests' => $received,
-                'total' => $total,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
-            ];
-            
             return response()->json([
                 'message' => 'تم جلب طلبات الانضمام المستلمة بنجاح',
-                'data' => $requestsData['requests'],
+                'data' => $received,
                 'meta' => [
-                    'total' => $requestsData['total'],
-                    'current_page' => $requestsData['current_page'],
-                    'per_page' => $requestsData['per_page'],
-                    'last_page' => $requestsData['last_page']
+                    'total' => $total
                 ]
             ]);
         } catch (\Exception $e) {
@@ -198,8 +183,6 @@ class InvitationController extends Controller
                 return response()->json(['message' => 'أنت لست قائد فريق', 'details' => 'No team found for the authenticated user as owner. User ID: ' . auth()->id()], 403);
             }
 
-            $page = $request->input('page', 1);
-            $perPage = min($request->input('per_page', 10), 50);
             $status = $request->input('status');
             
             // جلب طلبات الانضمام المرسلة من قبل الفريق من جدول طلبات الانضمام
@@ -211,9 +194,7 @@ class InvitationController extends Controller
                 $query->where('status', $status);
             }
             
-            $joinRequests = $query->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get()
+            $joinRequests = $query->get()
                 ->map(function($req) {
                     $req->type = 'sent';
                     if ($req->user && !empty($req->user->avatar_url) && !str_starts_with($req->user->avatar_url, 'http')) {
@@ -226,22 +207,11 @@ class InvitationController extends Controller
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->count();
             
-            $joinRequestsData = [
-                'requests' => $joinRequests,
-                'total' => $total,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
-            ];
-            
             return response()->json([
                 'message' => 'تم جلب طلبات الانضمام المرسلة من الفريق بنجاح',
-                'data' => $joinRequestsData['requests'],
+                'data' => $joinRequests,
                 'meta' => [
-                    'total' => $joinRequestsData['total'],
-                    'current_page' => $joinRequestsData['current_page'],
-                    'per_page' => $joinRequestsData['per_page'],
-                    'last_page' => $joinRequestsData['last_page']
+                    'total' => $total
                 ]
             ]);
         } catch (\Exception $e) {

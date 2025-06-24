@@ -12,12 +12,9 @@ class PaymentHistoryController extends Controller
 {
     public function index(\Illuminate\Http\Request $request): JsonResponse
     {
-        $page = $request->input('page', 1);
-        $perPage = $request->input('per_page', 10);
+        $cacheKey = 'user_payments_all_' . auth()->id() . '_v2';
         
-        $cacheKey = 'user_payments_all_' . auth()->id() . '_page_' . $page . '_' . $perPage . '_v2';
-        
-        $paymentsData = Cache::remember($cacheKey, 300, function () use ($page, $perPage) {
+        $paymentsData = Cache::remember($cacheKey, 300, function () {
             $query = auth()->user()->payments()
                 ->with('package:id,name,price')
                 // تم إزالة الشرط لعرض جميع حالات المدفوعات بما في ذلك "pending"
@@ -25,16 +22,11 @@ class PaymentHistoryController extends Controller
                 ->orderBy('created_at', 'desc');
                 
             $total = $query->count();
-            $payments = $query->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
+            $payments = $query->get();
                 
             return [
                 'data' => $payments,
-                'total' => $total,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
+                'total' => $total
             ];
         });
 
@@ -42,10 +34,7 @@ class PaymentHistoryController extends Controller
             'message' => 'تم جلب تاريخ المدفوعات بنجاح',
             'data' => PaymentResource::collection($paymentsData['data']),
             'meta' => [
-                'total' => $paymentsData['total'],
-                'current_page' => $paymentsData['current_page'],
-                'per_page' => $paymentsData['per_page'],
-                'last_page' => $paymentsData['last_page']
+                'total' => $paymentsData['total']
             ]
         ]);
     }
