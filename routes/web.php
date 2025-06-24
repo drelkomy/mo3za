@@ -98,3 +98,13 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
     Route::post('/{token}/accept', [InvitationController::class, 'accept'])->name('accept');
     Route::get('/{token}/reject', [InvitationController::class, 'reject'])->name('reject');
 });
+
+// Password Reset Routes for Admin
+use Filament\Http\Controllers\Auth\PasswordResetLinkController;
+use Filament\Http\Controllers\Auth\NewPasswordController;
+
+Route::get('admin/forgot-password', [PasswordResetLinkController::class, 'create'])->name('filament.admin.auth.password.request');
+Route::post('admin/forgot-password', [PasswordResetLinkController::class, 'store'])->name('filament.admin.auth.password.email');
+
+Route::get('admin/reset-password/{token}', [NewPasswordController::class, 'create'])->name('filament.admin.auth.password.reset');
+Route::post('admin/reset-password', [NewPasswordController::class, 'store'])->name('filament.admin.auth.password.store');

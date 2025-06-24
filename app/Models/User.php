@@ -224,9 +224,11 @@ class User extends Authenticatable implements FilamentUser, HasMedia, HasAvatar,
 
     public function sendPasswordResetNotification($token)
     {
-        // Send via queue for better performance
-        $this->notify(new \App\Notifications\ResetPasswordCustom($token));
-        \Illuminate\Support\Facades\Log::info('Password reset notification queued', [
+        // Send via queue for better performance using job
+        \App\Jobs\SendPasswordResetJob::dispatch($this, $token);
+        // Clear any cached data related to password reset for this user
+        \Illuminate\Support\Facades\Cache::forget("password_reset_{$this->id}");
+        \Illuminate\Support\Facades\Log::info('Password reset job dispatched', [
             'user_id' => $this->id,
             'email' => $this->email
         ]);
