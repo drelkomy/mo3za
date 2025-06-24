@@ -62,8 +62,16 @@ class JoinRequestResource extends Resource
         }
 
         $userId = Auth::id() ?? 'guest';
-        $cachedCount = Cache::remember("pending_join_requests_count_{$userId}", now()->addMinutes(5), function () {
-            return parent::getEloquentQuery()->where('status', 'pending')->count();
+        $cachedCount = Cache::remember("pending_join_requests_count_{$userId}", now()->addMinutes(5), function () use ($userId) {
+            return parent::getEloquentQuery()
+                ->where('status', 'pending')
+                ->where(function($query) use ($userId) {
+                    $query->where('user_id', $userId)
+                          ->orWhereHas('team', function($q) use ($userId) {
+                              $q->where('owner_id', $userId);
+                          });
+                })
+                ->count();
         });
 
         return (string) $cachedCount;
@@ -109,6 +117,7 @@ class JoinRequestResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true), // Hide by default
             ])
+            // No filters defined here as filtering is handled by tabs in ListJoinRequests.php
             ->actions([
                 Tables\Actions\Action::make('accept')
                     ->label('موافقة')
@@ -119,7 +128,15 @@ class JoinRequestResource extends Resource
                         $team = $record->team;
                         $user = $record->user;
 
-                        $team->members()->attach($user->id);
+                        // حذف أي طلبات انضمام قديمة لنفس المستخدم والفريق لتجنب التعارض
+                        JoinRequest::where('user_id', $user->id)
+                            ->where('team_id', $team->id)
+                            ->where('id', '!=', $record->id)
+                            ->delete();
+
+                        if (!$team->members()->where('user_id', $user->id)->exists()) {
+                            $team->members()->attach($user->id);
+                        }
                         $record->update(['status' => 'accepted']);
 
                         FilamentNotification::make()

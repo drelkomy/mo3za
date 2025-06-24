@@ -16,7 +16,15 @@ class SubscriptionResource extends JsonResource
             'max_tasks' => $this->package->max_tasks,
             'status' => $this->status,
             'start_date' => $this->start_date,
-            'created_at' => $this->created_at->format('Y-m-d H:i:s')
+            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
+            'usage' => [
+                'tasks_created' => $this->tasks_created ?? 0,
+                'remaining_tasks' => max(0, $this->package->max_tasks - ($this->tasks_created ?? 0)),
+                'usage_percentage' => $this->package->max_tasks > 0 ? 
+                    round((($this->tasks_created ?? 0) / $this->package->max_tasks) * 100, 1) : 0,
+            ],
+            'previous_tasks_completed' => $this->previous_tasks_completed ?? 0,
+            'previous_tasks_pending' => $this->previous_tasks_pending ?? 0
         ];
     }
 }

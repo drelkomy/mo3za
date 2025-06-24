@@ -98,6 +98,11 @@ class PaymentController extends Controller
     public function callback(Request $request)
     {
         try {
+            // Clear cache for user's payment history on callback processing
+            $user = auth()->user();
+            if ($user) {
+                $this->clearPaymentHistoryCache($user->id);
+            }
             // سجل بيانات الـ callback للتحقق
             Log::info('PayTabs callback received', [
                 'method' => $request->method(),
@@ -300,6 +305,11 @@ class PaymentController extends Controller
     public function success(Request $request)
     {
         $transactionRef = $request->get('tranRef');
+        // Clear cache for user's payment history on success
+        $user = auth()->user();
+        if ($user) {
+            $this->clearPaymentHistoryCache($user->id);
+        }
         
         // تسجيل كل البيانات المستلمة للتشخيص
         Log::debug('Payment success page accessed', [
@@ -384,6 +394,11 @@ class PaymentController extends Controller
     {
         // دعم كلٍ من مسار /activate/{transaction_ref} أو باراميتر ?transaction_ref=
         $transactionRef = $transaction_ref ?? $request->get('transaction_ref');
+        // Clear cache for user's payment history on activation
+        $user = auth()->user();
+        if ($user) {
+            $this->clearPaymentHistoryCache($user->id);
+        }
         
         // تسجيل الوصول إلى صفحة التنشيط
         Log::info('Payment activation page accessed', [
@@ -431,6 +446,11 @@ class PaymentController extends Controller
     {
         $packageId = $request->input('package_id') ?? $request->route('package_id');
         $request->merge(['package_id' => $packageId]);
+        // Clear cache for user's payment history on new payment
+        $user = auth()->user();
+        if ($user) {
+            $this->clearPaymentHistoryCache($user->id);
+        }
 
         $package = Cache::remember("package_{$request->package_id}", 3600, fn() => Package::findOrFail($request->package_id));
         $user = auth()->user();
@@ -550,6 +570,11 @@ class PaymentController extends Controller
     public function processLocalPayment($orderId)
     {
         try {
+            // Clear cache for user's payment history on local payment processing
+            $user = auth()->user();
+            if ($user) {
+                $this->clearPaymentHistoryCache($user->id);
+            }
             // البحث عن الدفع بواسطة رقم الطلب
             $payment = Payment::where('order_id', $orderId)->first();
             
@@ -576,6 +601,29 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             return redirect('/')->with('error', 'حدث خطأ أثناء معالجة الدفع: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Clear payment history cache for a specific user
+     *
+     * @param int $userId
+     */
+    protected function clearPaymentHistoryCache($userId)
+    {
+        // Since cache keys vary by page and per_page, we can't clear a specific key.
+        // Instead, we can use tags if available, or clear with a pattern if supported.
+        // For simplicity, we'll use a forget with a prefix approach if tags aren't used.
+        // However, since Laravel doesn't support wildcard clearing without tags,
+        // and assuming tags aren't set up, we'll note that cache will expire in 5 minutes.
+        // Alternatively, we can loop through possible page numbers, but that's inefficient.
+        // For now, we'll clear a few common page keys as a workaround.
+        for ($page = 1; $page <= 5; $page++) {
+            foreach ([10, 20, 50] as $perPage) {
+                $cacheKey = "user_payments_all_{$userId}_page_{$page}_{$perPage}_v2";
+                Cache::forget($cacheKey);
+            }
+        }
+        Log::info('Payment history cache cleared for user', ['user_id' => $userId]);
     }
 
     /**

@@ -15,13 +15,13 @@ class PaymentHistoryController extends Controller
         $page = $request->input('page', 1);
         $perPage = $request->input('per_page', 10);
         
-        $cacheKey = 'user_payments_' . auth()->id() . '_page_' . $page . '_' . $perPage;
+        $cacheKey = 'user_payments_all_' . auth()->id() . '_page_' . $page . '_' . $perPage . '_v2';
         
         $paymentsData = Cache::remember($cacheKey, 300, function () use ($page, $perPage) {
-            $query = auth()->user()->subscriptions()
+            $query = auth()->user()->payments()
                 ->with('package:id,name,price')
-                ->where('status', '!=', 'pending')
-                ->select(['id', 'package_id', 'price_paid', 'status', 'created_at'])
+                // تم إزالة الشرط لعرض جميع حالات المدفوعات بما في ذلك "pending"
+                ->select(['id', 'package_id', 'amount', 'status', 'created_at'])
                 ->orderBy('created_at', 'desc');
                 
             $total = $query->count();

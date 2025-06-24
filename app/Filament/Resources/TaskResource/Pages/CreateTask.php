@@ -28,17 +28,16 @@ class CreateTask extends CreateRecord
         }
 
         $taskLimit = $subscription->package->max_tasks ?? 0;
-        // حساب المهام من تاريخ بدء الاشتراك
-        $startDate = $subscription->start_date ?? $subscription->created_at;
+        // حساب المهام الخاصة بالاشتراك النشط فقط
         $currentTaskCount = Task::where('creator_id', $user->id)
-            ->where('created_at', '>=', $startDate)
+            ->where('subscription_id', $subscription->id)
             ->count();
         $newTasksCount = count($data['receiver_ids']);
 
         if ($taskLimit > 0 && ($currentTaskCount + $newTasksCount) > $taskLimit) {
             Notification::make()
                 ->title('تم الوصول لحد الباقة!')
-                ->body("لا يمكنك إنشاء مهام جديدة. لقد وصلت للحد الأقصى ({$taskLimit} مهمة) منذ بداية اشتراكك.")
+                ->body("لا يمكنك إنشاء مهام جديدة. لقد وصلت للحد الأقصى ({$taskLimit} مهمة) في هذا الاشتراك النشط.")
                 ->danger()
                 ->send();
             throw new Halt();

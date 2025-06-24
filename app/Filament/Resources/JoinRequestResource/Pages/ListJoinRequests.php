@@ -20,26 +20,25 @@ class ListJoinRequests extends ListRecords
     public function getTabs(): array
     {
         $user = auth()->user();
-        $team = \App\Models\Team::where('owner_id', $user->id)
-            ->orWhereHas('members', function ($query) use ($user) {
-                $query->where('user_id', $user->id);
-            })
-            ->first();
-        
-        $teamId = $team ? $team->id : null;
+        $baseQuery = JoinRequestResource::getEloquentQuery();
         
         return [
             'الكل' => Tab::make()
-                ->badge($teamId ? JoinRequest::where('team_id', $teamId)->count() : 0),
+                ->badge($baseQuery->clone()->count()),
             'في الانتظار' => Tab::make()
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'pending')->when($teamId, fn($q) => $q->where('team_id', $teamId)))
-                ->badge($teamId ? JoinRequest::where('status', 'pending')->where('team_id', $teamId)->count() : 0),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'pending'))
+                ->badge($baseQuery->clone()->where('status', 'pending')->count()),
             'مقبول' => Tab::make()
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'accepted')->when($teamId, fn($q) => $q->where('team_id', $teamId)))
-                ->badge($teamId ? JoinRequest::where('status', 'accepted')->where('team_id', $teamId)->count() : 0),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'accepted'))
+                ->badge($baseQuery->clone()->where('status', 'accepted')->count()),
             'مرفوض' => Tab::make()
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'rejected')->when($teamId, fn($q) => $q->where('team_id', $teamId)))
-                ->badge($teamId ? JoinRequest::where('status', 'rejected')->where('team_id', $teamId)->count() : 0),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'rejected'))
+                ->badge($baseQuery->clone()->where('status', 'rejected')->count()),
         ];
+    }
+    
+    protected function getDefaultTab(): ?string
+    {
+        return 'في الانتظار';
     }
 }

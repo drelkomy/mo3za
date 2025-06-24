@@ -266,6 +266,32 @@ class TaskResource extends Resource
                     ->limit(30)
                     ->color('warning')
                     ->placeholder('لا يوجد'),
+                Tables\Columns\TextColumn::make('subscription.status')
+                    ->label('حالة الاشتراك')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'active' => 'success',
+                        'expired' => 'danger',
+                        'cancelled' => 'warning',
+                        default => 'gray',
+                    }),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('subscription_status')
+                    ->label('حالة الاشتراك')
+                    ->options([
+                        'active' => 'نشط',
+                        'expired' => 'منتهي',
+                        'cancelled' => 'ملغى',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (!empty($data['value'])) {
+                            return $query->whereHas('subscription', function (Builder $q) use ($data) {
+                                $q->where('status', $data['value']);
+                            });
+                        }
+                        return $query;
+                    }),
             ])
             ->actions([
                 Tables\Actions\Action::make('stages')

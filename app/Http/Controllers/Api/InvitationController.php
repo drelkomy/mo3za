@@ -47,14 +47,18 @@ class InvitationController extends Controller
                 return response()->json(['message' => 'المستخدم عضو في الفريق بالفعل', 'details' => "User with ID {$user->id} is already a member of team ID {$team->id}"], 422);
             }
 
-            // التحقق من وجود طلب انضمام معلق (JoinRequest)
+            // التحقق من وجود طلبات انضمام سابقة (JoinRequest) بأي حالة
             $existingJoinRequest = \App\Models\JoinRequest::where('team_id', $team->id)
                 ->where('user_id', $user->id)
-                ->where('status', 'pending')
                 ->first();
 
             if ($existingJoinRequest) {
-                return response()->json(['message' => 'يوجد طلب انضمام معلق لهذا المستخدم', 'details' => "Pending join request exists for user ID {$user->id} in team ID {$team->id} with request ID {$existingJoinRequest->id}"], 422);
+                if ($existingJoinRequest->status === 'pending') {
+                    return response()->json(['message' => 'يوجد طلب انضمام معلق لهذا المستخدم', 'details' => "Pending join request exists for user ID {$user->id} in team ID {$team->id} with request ID {$existingJoinRequest->id}"], 422);
+                } else {
+                    // حذف الطلبات السابقة (accepted أو rejected) لتجنب انتهاك القيد الفريد
+                    $existingJoinRequest->delete();
+                }
             }
 
             // إنشاء طلب انضمام (JoinRequest) كبيانات أساسية
@@ -310,10 +314,12 @@ class InvitationController extends Controller
             }
             
             if ($request->action === 'accept') {
-                // إضافة العضو للفريق
+                // إضافة العضو للفريق فقط إذا لم يكن عضوًا بالفعل
                 $team = Team::find($joinRequest->team_id);
                 if ($team) {
-                    $team->members()->attach($userId);
+                    if (!$team->members()->where('user_id', $userId)->exists()) {
+                        $team->members()->attach($userId);
+                    }
                     // مسح cache لفريق المالك
                     Cache::forget("my_team_" . $team->owner_id);
                     // مسح cache للمستخدم الذي قبل الطلب

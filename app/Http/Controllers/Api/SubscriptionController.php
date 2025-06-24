@@ -44,49 +44,41 @@ class SubscriptionController extends Controller
 
     public function trialStatus(): JsonResponse
     {
-        $cacheKey = 'trial_status_' . auth()->id();
+        $user = auth()->user();
         
-        $trialData = Cache::remember($cacheKey, 300, function () {
-            $user = auth()->user();
-            
-            // التحقق من وجود اشتراك تجريبي سابق
-            $trialSubscription = $user->subscriptions()
-                ->whereHas('package', function($q) {
-                    $q->where('is_trial', true);
-                })
-                ->first();
-            
-            $hasTrial = $trialSubscription !== null;
-            $isTrialActive = $trialSubscription && $trialSubscription->status === 'active' && 
-                           $trialSubscription->end_date && $trialSubscription->end_date->isFuture();
-            
-            return (object) [
-                'has_trial' => $hasTrial,
-                'is_trial_active' => $isTrialActive,
-                'trial_subscription' => $trialSubscription,
-            ];
-        });
+        // التحقق من وجود اشتراك تجريبي سابق
+        $trialSubscription = $user->subscriptions()
+            ->whereHas('package', function($q) {
+                $q->where('is_trial', true);
+            })
+            ->first();
+        
+        $hasTrial = $trialSubscription !== null;
+        $isTrialActive = $trialSubscription && $trialSubscription->status === 'active' && 
+                       $trialSubscription->end_date && $trialSubscription->end_date->isFuture();
+        
+        $trialData = (object) [
+            'has_trial' => $hasTrial,
+            'is_trial_active' => $isTrialActive,
+            'trial_subscription' => $trialSubscription,
+        ];
         
         return response()->json([
             'message' => 'تم جلب حالة الاشتراك التجريبي بنجاح',
             'data' => new TrialStatusResource($trialData)
-        ])->setMaxAge(300)->setPublic();
+        ]);
     }
 
-    public function currentSubscription(): JsonResponse
+    public function currentSubscription(Request $request): JsonResponse
     {
-        $cacheKey = 'current_subscription_' . auth()->id();
-        
-        $subscription = Cache::remember($cacheKey, 300, function () {
-            return auth()->user()->subscriptions()
-                ->with('package')
-                ->where('status', 'active')
-                ->first();
-        });
+        $subscription = auth()->user()->subscriptions()
+            ->with('package')
+            ->orderBy('created_at', 'desc')
+            ->first();
         
         if (!$subscription) {
             return response()->json([
-                'message' => 'لا يوجد اشتراك نشط حالياً',
+                'message' => 'لا يوجد اشتراك حالياً',
                 'data' => null,
                 'has_subscription' => false
             ]);
@@ -96,6 +88,19 @@ class SubscriptionController extends Controller
             'message' => 'تم جلب اشتراكك الحالي بنجاح',
             'data' => new \App\Http\Resources\CurrentSubscriptionResource($subscription),
             'has_subscription' => true
-        ])->setMaxAge(300)->setPublic();
+        ]);
+    }
+
+    public function subscriptionHistory(): JsonResponse
+    {
+        $subscriptions = auth()->user()->subscriptions()
+            ->with(['package', 'tasks'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+        
+        return response()->json([
+            'message' => 'تم جلب تاريخ الاشتراكات والمهام بنجاح',
+            'data' => \App\Http\Resources\SubscriptionWithTasksResource::collection($subscriptions)
+        ]);
     }
 }
