@@ -75,12 +75,16 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/current-subscription', [\App\Http\Controllers\Api\SubscriptionController::class, 'currentSubscription']); // اشتراكي الحالي
     
     // Team Invitations - دعوات الفريق
-    Route::post('/invitations/send', [\App\Http\Controllers\Api\InvitationController::class, 'send'])
-        ->middleware('throttle:5,1'); // إرسال دعوة
-    Route::post('/invitations/respond', [\App\Http\Controllers\Api\InvitationController::class, 'respond']); // قبول/رفض
-    Route::get('/team/invitations', [\App\Http\Controllers\Api\InvitationController::class, 'teamInvitations']); // دعوات الفريق
-    Route::get('/my-invitations', [\App\Http\Controllers\Api\InvitationController::class, 'myInvitations']); // دعواتي
-    Route::post('/invitations/delete', [\App\Http\Controllers\Api\InvitationController::class, 'delete']); // حذف دعوة
+    Route::post('/invitations/sent', [\App\Http\Controllers\Api\InvitationController::class, 'send'])
+        ->middleware('throttle:20,1'); // إرسال دعوة
+    Route::post('/invitations/respond', [\App\Http\Controllers\Api\InvitationController::class, 'respond'])
+        ->middleware('throttle:20,1'); // قبول/رفض
+    Route::get('/team/invitations', [\App\Http\Controllers\Api\InvitationController::class, 'teamInvitations'])
+        ->middleware('throttle:20,1'); // دعوات الفريق
+    Route::get('/my-invitations', [\App\Http\Controllers\Api\InvitationController::class, 'myInvitations'])
+        ->middleware('throttle:20,1'); // دعواتي
+    Route::post('/invitations/delete', [\App\Http\Controllers\Api\InvitationController::class, 'delete'])
+        ->middleware('throttle:20,1'); // حذف دعوة
     
 
     // Payment Callbacks - استقبال نتائج الدفع
@@ -91,4 +95,3 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);
 });
-

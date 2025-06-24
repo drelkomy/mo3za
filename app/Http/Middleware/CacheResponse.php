@@ -17,8 +17,16 @@ class CacheResponse
 
         $key = 'api_cache_' . md5($request->fullUrl() . auth()->id());
         
-        return Cache::remember($key, $minutes * 60, function () use ($next, $request) {
-            return $next($request);
+        // Check if the response has Cache-Control: no-cache header
+        $response = $next($request);
+        $cacheControl = $response->headers->get('Cache-Control', '');
+        
+        if (stripos($cacheControl, 'no-cache') !== false || stripos($cacheControl, 'no-store') !== false) {
+            return $response;
+        }
+        
+        return Cache::remember($key, $minutes * 60, function () use ($response) {
+            return $response;
         });
     }
 }

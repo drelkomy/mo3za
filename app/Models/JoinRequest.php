@@ -14,6 +14,7 @@ class JoinRequest extends Model
         'user_id',
         'team_id',
         'status',
+        'message',
     ];
 
     protected $casts = [

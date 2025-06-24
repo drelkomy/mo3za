@@ -94,6 +94,8 @@ class Team extends Model
             $this->members()->attach($userId, ['role' => $role]);
             // حذف التخزين المؤقت عند تغيير الأعضاء
             Cache::forget("team_{$this->id}_members_count");
+            // حذف التخزين المؤقت لفريق المالك
+            Cache::forget("my_team_{$this->owner_id}");
             return true;
         }
         return false;

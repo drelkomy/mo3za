@@ -14,7 +14,7 @@ class RespondInvitationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'invitation_id' => 'required|exists:invitations,id',
+            'invitation_id' => 'required',
             'action' => 'required|in:accept,reject',
         ];
     }
@@ -23,7 +23,6 @@ class RespondInvitationRequest extends FormRequest
     {
         return [
             'invitation_id.required' => 'معرف الدعوة مطلوب',
-            'invitation_id.exists' => 'الدعوة غير موجودة',
             'action.required' => 'الإجراء مطلوب',
             'action.in' => 'الإجراء يجب أن يكون قبول أو رفض',
         ];

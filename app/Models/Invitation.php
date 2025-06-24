@@ -57,6 +57,11 @@ class Invitation extends Model
         return $this->belongsTo(User::class, 'sender_id');
     }
 
+    public function invitee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'invitee_id');
+    }
+
     // دوال مساعدة لتحسين الأداء
     public function accept(): bool
     {

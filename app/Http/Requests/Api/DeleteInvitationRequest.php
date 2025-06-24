@@ -14,7 +14,7 @@ class DeleteInvitationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'invitation_id' => 'required|exists:invitations,id',
+            'invitation_id' => 'required',
         ];
     }
 
@@ -22,7 +22,6 @@ class DeleteInvitationRequest extends FormRequest
     {
         return [
             'invitation_id.required' => 'معرف الدعوة مطلوب',
-            'invitation_id.exists' => 'الدعوة غير موجودة',
         ];
     }
 }

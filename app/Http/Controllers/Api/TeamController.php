@@ -41,21 +41,19 @@ class TeamController extends Controller
     
     public function myTeam(\App\Http\Requests\Api\MyTeamRequest $request): JsonResponse
     {
-        $cacheKey = 'my_team_' . auth()->id();
-        
-        $team = Cache::remember($cacheKey, 300, function () {
-            return Team::where('owner_id', auth()->id())
-                ->with([
-                    'owner:id,name,email,avatar_url',
-                    'members:id,name,email,avatar_url',
-                    'tasks' => function($query) {
-                        $query->select('id', 'team_id', 'title', 'status', 'receiver_id', 'progress')
-                              ->with('receiver:id,name');
-                    }
-                ])
-                ->select('id', 'name', 'owner_id', 'created_at')
-                ->first();
-        });
+        $team = Team::where('owner_id', auth()->id())
+            ->with([
+                'owner:id,name,email',
+                'members:id,name,email,avatar_url',
+                'tasks' => function($query) {
+                    $query->select('id', 'team_id', 'title', 'status', 'receiver_id', 'progress')
+                          ->with('receiver:id,name')
+                          ->orderBy('created_at', 'desc')
+                          ->take(10);
+                }
+            ])
+            ->select('id', 'name', 'owner_id', 'created_at')
+            ->first();
             
         if (!$team) {
             return response()->json([
@@ -69,7 +67,9 @@ class TeamController extends Controller
         return response()->json([
             'message' => 'تم جلب فريقك بنجاح',
             'data' => new \App\Http\Resources\MyTeamResource($team)
-        ]);
+        ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+         ->header('Pragma', 'no-cache')
+         ->header('Expires', '0');
     }
     
     public function updateName(UpdateTeamNameRequest $request): JsonResponse
@@ -78,8 +78,8 @@ class TeamController extends Controller
         
         $team->update(['name' => $request->input('name')]);
         
-        // حذف الكاش
-        Cache::forget('my_team_' . auth()->id());
+        // مسح cache بدون استخدام tags
+        Cache::forget("my_team_" . auth()->id());
         
         $team = Team::where('id', $team->id)->with('owner:id,name,email,avatar_url')->first();
         
@@ -103,9 +103,11 @@ class TeamController extends Controller
         
         $team->members()->detach($memberId);
         
-        // حذف الكاش
-        Cache::forget('my_team_' . auth()->id());
-        Cache::forget('my_team_' . $memberId);
+        // مسح cache بدون استخدام tags
+        Cache::forget("my_team_" . auth()->id());
+        Cache::forget("my_team_" . $memberId);
+        Cache::forget("user_team_" . auth()->id());
+        Cache::forget("user_team_" . $memberId);
         
         return response()->json([
             'message' => 'تم إزالة العضو من فريقك بنجاح'
@@ -350,9 +352,9 @@ class TeamController extends Controller
             }
         }
         
-        // حذف الكاش
-        Cache::forget("team_tasks_{$team->id}_*");
-        Cache::forget("my_tasks_{$receiverId}_*");
+        // مسح cache بدون استخدام tags
+        Cache::forget("team_tasks_" . $team->id);
+        Cache::forget("my_tasks_" . $receiverId);
         
         // إذا كانت المهمة متعددة، قم بإضافة الأعضاء المحددين
         if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {

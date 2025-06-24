@@ -35,7 +35,6 @@ class MyTeamResource extends JsonResource
                 'id' => $this->owner->id,
                 'name' => $this->owner->name,
                 'email' => $this->owner->email,
-                'avatar_url' => $this->getAvatarUrl($this->owner),
             ],
             'members' => $this->formatMembers(),
             'members_count' => $this->members->count(),
