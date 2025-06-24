@@ -382,6 +382,67 @@ class TeamController extends Controller
     }
     
     /**
+     * عرض إحصائيات أعضاء الفريق
+     */
+    public function getMemberStats(Request $request): JsonResponse
+    {
+        try {
+            // Check authentication
+            if (!auth()->check()) {
+                return response()->json(['message' => 'غير مصادق', 'details' => 'No authenticated user found. Please ensure you are logged in or have provided valid API credentials.'], 401);
+            }
+            
+            $team = Team::where('owner_id', auth()->id())->first();
+            
+            if (!$team) {
+                return response()->json(['message' => 'أنت لست قائد فريق', 'details' => 'No team found for the authenticated user as owner. User ID: ' . auth()->id()], 403);
+            }
+
+            // جلب أعضاء الفريق
+            $members = $team->members()->get(['users.id', 'name', 'email', 'avatar_url']);
+            
+            // جلب إحصائيات المهام لكل عضو
+            $memberStats = $members->map(function ($member) use ($team) {
+                $totalTasks = Task::where('team_id', $team->id)
+                    ->where('receiver_id', $member->id)
+                    ->count();
+                    
+                $completedTasks = Task::where('team_id', $team->id)
+                    ->where('receiver_id', $member->id)
+                    ->where('status', 'completed')
+                    ->count();
+                    
+                $pendingTasks = Task::where('team_id', $team->id)
+                    ->where('receiver_id', $member->id)
+                    ->where('status', 'pending')
+                    ->count();
+                    
+                return [
+                    'id' => $member->id,
+                    'name' => $member->name,
+                    'email' => $member->email,
+                    'avatar_url' => $member->avatar_url,
+                    'total_tasks' => $totalTasks,
+                    'completed_tasks' => $completedTasks,
+                    'pending_tasks' => $pendingTasks,
+                    'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0
+                ];
+            });
+            
+            return response()->json([
+                'message' => 'تم جلب إحصائيات أعضاء الفريق بنجاح',
+                'data' => $memberStats
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'حدث خطأ أثناء جلب إحصائيات أعضاء الفريق',
+                'error' => $e->getMessage(),
+                'details' => 'Exception occurred while fetching team member stats. Stack trace: ' . $e->getTraceAsString()
+            ], 500);
+        }
+    }
+
+    /**
      * الحصول على فريق المستخدم (سواء كان مالكاً أو عضواً)
      */
     private function getUserTeam(): ?Team

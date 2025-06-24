@@ -138,33 +138,23 @@ class InvitationController extends Controller
             
             // جمع طلبات الانضمام المستلمة من جدول طلبات الانضمام
             $received = \App\Models\JoinRequest::where('user_id', $userId)
-                ->with(['team:id,name', 'user:id,name'])
+                ->with(['team:id,name', 'user:id,name,avatar_url'])
+                ->orderBy('created_at', 'desc')
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
                 ->get()
                 ->map(function($req) {
                     $req->type = 'received';
+                    if ($req->user && !empty($req->user->avatar_url) && !str_starts_with($req->user->avatar_url, 'http')) {
+                        $req->user->avatar_url = 'https://www.moezez.com/storage/' . $req->user->avatar_url;
+                    }
                     return $req;
                 });
                 
-            // جمع طلبات الانضمام المرسلة من جدول طلبات الانضمام بناءً على الفرق التي يملكها المستخدم
-            $ownedTeams = Team::where('owner_id', $userId)->pluck('id');
-            $sent = \App\Models\JoinRequest::whereIn('team_id', $ownedTeams)
-                ->with(['team:id,name', 'user:id,name'])
-                ->get()
-                ->map(function($req) {
-                    $req->type = 'sent';
-                    return $req;
-                });
-                
-            $allRequests = $sent->merge($received)
-                ->sortByDesc('created_at')
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->values();
-                
-            $total = $sent->count() + $received->count();
+            $total = \App\Models\JoinRequest::where('user_id', $userId)->count();
             
             $requestsData = [
-                'requests' => $allRequests,
+                'requests' => $received,
                 'total' => $total,
                 'current_page' => $page,
                 'per_page' => $perPage,
@@ -172,7 +162,7 @@ class InvitationController extends Controller
             ];
             
             return response()->json([
-                'message' => 'تم جلب جميع طلبات الانضمام بنجاح',
+                'message' => 'تم جلب طلبات الانضمام المستلمة بنجاح',
                 'data' => $requestsData['requests'],
                 'meta' => [
                     'total' => $requestsData['total'],
@@ -183,9 +173,9 @@ class InvitationController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'حدث خطأ أثناء جلب طلبات الانضمام',
+                'message' => 'حدث خطأ أثناء جلب طلبات الانضمام المستلمة',
                 'error' => $e->getMessage(),
-                'details' => 'Exception occurred while fetching join requests. Stack trace: ' . $e->getTraceAsString()
+                'details' => 'Exception occurred while fetching received join requests. Stack trace: ' . $e->getTraceAsString()
             ], 500);
         }
     }
@@ -208,9 +198,9 @@ class InvitationController extends Controller
             $perPage = min($request->input('per_page', 10), 50);
             $status = $request->input('status');
             
-            // جلب طلبات الانضمام للفريق من جدول طلبات الانضمام
+            // جلب طلبات الانضمام المرسلة من قبل الفريق من جدول طلبات الانضمام
             $query = \App\Models\JoinRequest::where('team_id', $team->id)
-                ->with(['user:id,name', 'team:id,name'])
+                ->with(['user:id,name,avatar_url', 'team:id,name'])
                 ->orderBy('created_at', 'desc');
             
             if ($status) {
@@ -219,14 +209,21 @@ class InvitationController extends Controller
             
             $joinRequests = $query->skip(($page - 1) * $perPage)
                 ->take($perPage)
-                ->get();
+                ->get()
+                ->map(function($req) {
+                    $req->type = 'sent';
+                    if ($req->user && !empty($req->user->avatar_url) && !str_starts_with($req->user->avatar_url, 'http')) {
+                        $req->user->avatar_url = 'https://www.moezez.com/storage/' . $req->user->avatar_url;
+                    }
+                    return $req;
+                });
             
             $total = \App\Models\JoinRequest::where('team_id', $team->id)
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->count();
             
             $joinRequestsData = [
-                'join_requests' => $joinRequests,
+                'requests' => $joinRequests,
                 'total' => $total,
                 'current_page' => $page,
                 'per_page' => $perPage,
@@ -234,8 +231,8 @@ class InvitationController extends Controller
             ];
             
             return response()->json([
-                'message' => 'تم جلب طلبات انضمام الفريق بنجاح',
-                'data' => $joinRequestsData['join_requests'],
+                'message' => 'تم جلب طلبات الانضمام المرسلة من الفريق بنجاح',
+                'data' => $joinRequestsData['requests'],
                 'meta' => [
                     'total' => $joinRequestsData['total'],
                     'current_page' => $joinRequestsData['current_page'],
@@ -245,9 +242,9 @@ class InvitationController extends Controller
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'حدث خطأ أثناء جلب طلبات انضمام الفريق',
+                'message' => 'حدث خطأ أثناء جلب طلبات الانضمام المرسلة من الفريق',
                 'error' => $e->getMessage(),
-                'details' => 'Exception occurred while fetching team join requests. Stack trace: ' . $e->getTraceAsString()
+                'details' => 'Exception occurred while fetching team sent join requests. Stack trace: ' . $e->getTraceAsString()
             ], 500);
         }
     }
