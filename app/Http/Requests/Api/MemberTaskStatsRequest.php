@@ -14,7 +14,8 @@ class MemberTaskStatsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'member_id' => 'required|integer|exists:users,id'
+            'member_id' => 'required|integer|exists:users,id',
+            'page' => 'sometimes|integer|min:1'
         ];
     }
 

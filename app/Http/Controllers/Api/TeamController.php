@@ -11,6 +11,8 @@ use App\Http\Resources\TeamDetailResource;
 use App\Http\Resources\TaskResource;
 use App\Http\Resources\RewardResource;
 use App\Http\Resources\TeamRewardResource;
+use App\Http\Resources\MemberTaskResource;
+use App\Http\Resources\MemberTaskStatsResource;
 use App\Models\Team;
 use App\Models\Task;
 use App\Models\TaskStage;
@@ -497,6 +499,8 @@ class TeamController extends Controller
     public function getMemberTaskStats(\App\Http\Requests\Api\MemberTaskStatsRequest $request): JsonResponse
     {
         $memberId = $request->input('member_id');
+        $page = $request->input('page', 1);
+        $perPage = 10;
         $team = Team::where('owner_id', auth()->id())->first();
         
         if (!$team) {
@@ -509,19 +513,29 @@ class TeamController extends Controller
             return response()->json(['message' => 'العضو ليس في فريقك'], 403);
         }
         
-        $cacheKey = "member_task_stats_{$team->id}_{$memberId}";
+        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_page_{$page}";
         
-        $stats = Cache::remember($cacheKey, 300, function () use ($team, $memberId) {
+        $data = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $page, $perPage) {
             $member = User::find($memberId);
             
-            $totalTasks = Task::where('creator_id', $team->owner_id)
+            // جلب المهام مع المراحل
+            $tasksQuery = Task::where('creator_id', $team->owner_id)
                 ->where(function ($query) use ($memberId) {
                     $query->where('receiver_id', $memberId)
                           ->orWhereHas('members', function ($q) use ($memberId) {
                               $q->where('user_id', $memberId);
                           });
                 })
-                ->count();
+                ->with(['stages' => function($q) {
+                    $q->orderBy('stage_number');
+                }]);
+                
+            $totalTasks = $tasksQuery->count();
+            
+            $tasks = $tasksQuery->orderBy('created_at', 'desc')
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
+                ->get();
                 
             $completedTasks = Task::where('creator_id', $team->owner_id)
                 ->where('status', 'completed')
@@ -563,20 +577,33 @@ class TeamController extends Controller
                 ->avg('progress') ?? 0;
                 
             return [
-                'member_id' => $memberId,
-                'member_name' => $member->name,
-                'total_tasks' => $totalTasks,
-                'completed_tasks' => $completedTasks,
-                'in_progress_tasks' => $inProgressTasks,
-                'pending_tasks' => $pendingTasks,
-                'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
-                'average_progress' => round($averageProgress, 1)
+                'stats' => [
+                    'member_id' => $memberId,
+                    'member_name' => $member->name,
+                    'total_tasks' => $totalTasks,
+                    'completed_tasks' => $completedTasks,
+                    'in_progress_tasks' => $inProgressTasks,
+                    'pending_tasks' => $pendingTasks,
+                    'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
+                    'average_progress' => round($averageProgress, 1)
+                ],
+                'tasks' => $tasks,
+                'pagination' => [
+                    'total' => $totalTasks,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'last_page' => ceil($totalTasks / $perPage)
+                ]
             ];
         });
         
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام العضو بنجاح',
-            'data' => new \App\Http\Resources\MemberTaskStatsResource($stats)
+            'data' => [
+                'member' => new \App\Http\Resources\MemberTaskStatsResource($data['stats']),
+                'tasks' => \App\Http\Resources\MemberTaskResource::collection($data['tasks']),
+                'pagination' => $data['pagination']
+            ]
         ])->setMaxAge(300)->setPublic();
     }
 
