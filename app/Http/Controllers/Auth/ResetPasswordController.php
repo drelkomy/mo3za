@@ -13,12 +13,14 @@ class ResetPasswordController extends Controller
 {
     public function showResetForm(Request $request, $token)
     {
-        $cacheKey = "password_reset_used:{$token}";
+        $email = $request->email;
+        $uniqueId = $request->unique_id;
+        $cacheKey = "password_reset_{$uniqueId}_{$email}";
 
-        // Check if token has already been used
-        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
+        // Check if token has already been used or invalid
+        if (!\Illuminate\Support\Facades\Cache::has($cacheKey) || \Illuminate\Support\Facades\Cache::get($cacheKey)['used']) {
             return redirect()->route('filament.admin.auth.password.request')
-                ->withErrors(['email' => ['تم استخدام هذا الرابط بالفعل. يرجى طلب رابط جديد.']]);
+                ->withErrors(['email' => ['تم استخدام هذا الرابط بالفعل أو انتهت صلاحيته. يرجى طلب رابط جديد.']]);
         }
 
         return view('auth.passwords.reset', ['token' => $token, 'email' => $request->email]);
@@ -30,14 +32,16 @@ class ResetPasswordController extends Controller
             'token' => 'required',
             'email' => 'required|email',
             'password' => 'required|min:8|confirmed',
+            'unique_id' => 'required',
         ]);
 
-        $token = $request->input('token');
-        $cacheKey = "password_reset_used:{$token}";
+        $email = $request->input('email');
+        $uniqueId = $request->input('unique_id');
+        $cacheKey = "password_reset_{$uniqueId}_{$email}";
 
-        // Check if token has already been used
-        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
-            return back()->withErrors(['email' => ['تم استخدام هذا الرابط بالفعل. يرجى طلب رابط جديد.']]);
+        // Check if token has already been used or invalid
+        if (!\Illuminate\Support\Facades\Cache::has($cacheKey) || \Illuminate\Support\Facades\Cache::get($cacheKey)['used']) {
+            return back()->withErrors(['email' => ['تم استخدام هذا الرابط بالفعل أو انتهت صلاحيته. يرجى طلب رابط جديد.']]);
         }
 
         $status = Password::reset(
@@ -49,15 +53,25 @@ class ResetPasswordController extends Controller
 
                 $user->save();
 
-                // Mark token as used in cache with expiration time (e.g., 1 day)
-                \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addDay());
+                // Mark token as used in cache
+                $cacheData = \Illuminate\Support\Facades\Cache::get($cacheKey);
+                $cacheData['used'] = true;
+                \Illuminate\Support\Facades\Cache::put($cacheKey, $cacheData, now()->addDay());
 
                 event(new PasswordReset($user));
             }
         );
 
-        return $status === Password::PASSWORD_RESET
-            ? redirect()->route('login')->with('status', __($status))
-            : back()->withErrors(['email' => [__($status)]]);
+        if ($status === Password::PASSWORD_RESET) {
+            // Ensure the cache entry is marked as used immediately after successful reset
+            $cacheData = \Illuminate\Support\Facades\Cache::get($cacheKey);
+            if ($cacheData) {
+                $cacheData['used'] = true;
+                \Illuminate\Support\Facades\Cache::put($cacheKey, $cacheData, now()->addDay());
+            }
+            return redirect()->route('password.success')->with('status', 'تم تغيير كلمة المرور بنجاح. سيتم توجيهك إلى الصفحة الرئيسية تلقائيًا.');
+        } else {
+            return back()->withErrors(['email' => [__($status)]]);
+        }
     }
 }

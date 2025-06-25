@@ -40,12 +40,18 @@ class ResetPasswordCustom extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $email = $notifiable->getEmailForPasswordReset();
+        $uniqueId = uniqid('reset_', true);
+        $cacheKey = "password_reset_{$uniqueId}_{$email}";
+        \Illuminate\Support\Facades\Cache::put($cacheKey, ['used' => false, 'email' => $email], now()->addMinutes(config('auth.passwords.users.expire', 60)));
+
         $url = URL::temporarySignedRoute(
             'filament.admin.auth.password.reset',
             now()->addMinutes(config('auth.passwords.users.expire', 60)),
             [
                 'token' => $this->token,
-                'email' => $notifiable->getEmailForPasswordReset(),
+                'email' => $email,
+                'unique_id' => $uniqueId,
             ],
             true
         );
@@ -53,6 +59,7 @@ class ResetPasswordCustom extends Notification implements ShouldQueue
         Log::info('Building password reset mail', [
             'url' => $url,
             'user_id' => $notifiable->id,
+            'unique_id' => $uniqueId,
         ]);
 
         return (new MailMessage)

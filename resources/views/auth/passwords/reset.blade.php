@@ -88,23 +88,32 @@
         <form method="POST" action="{{ route('filament.admin.auth.password.store') }}">
             @csrf
             <input type="hidden" name="token" value="{{ $token }}">
-            <div class="form-group">
-                <label for="email">البريد الإلكتروني</label>
-                <input type="email" name="email" id="email" placeholder="البريد الإلكتروني" required>
-                @error('email')
-                    <div class="alert alert-danger">{{ $message }}</div>
-                @enderror
-            </div>
+            <input type="hidden" name="email" value="{{ $email }}">
             <div class="form-group">
                 <label for="password">كلمة المرور الجديدة</label>
-                <input type="password" name="password" id="password" placeholder="كلمة المرور الجديدة" required>
+                <input type="password" name="password" id="password" placeholder="كلمة المرور الجديدة" required minlength="8" autocomplete="new-password">
                 @error('password')
-                    <div class="alert alert-danger">{{ $message }}</div>
+                    <div class="alert alert-danger">
+                        @if($message == 'The password must be at least 8 characters.')
+                            يجب أن تكون كلمة المرور 8 أحرف على الأقل.
+                        @else
+                            {{ $message }}
+                        @endif
+                    </div>
                 @enderror
             </div>
             <div class="form-group">
                 <label for="password_confirmation">تأكيد كلمة المرور</label>
-                <input type="password" name="password_confirmation" id="password_confirmation" placeholder="تأكيد كلمة المرور" required>
+                <input type="password" name="password_confirmation" id="password_confirmation" placeholder="تأكيد كلمة المرور" required autocomplete="new-password">
+                @error('password_confirmation')
+                    <div class="alert alert-danger">
+                        @if($message == 'The password confirmation does not match.')
+                            تأكيد كلمة المرور غير متطابق.
+                        @else
+                            {{ $message }}
+                        @endif
+                    </div>
+                @enderror
             </div>
             <button type="submit">إعادة تعيين كلمة المرور</button>
         </form>

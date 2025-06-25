@@ -88,7 +88,7 @@
         <form method="POST" action="{{ route('filament.admin.auth.password.email') }}">
             @csrf
             <div class="form-group">
-                <label for="email">البريد الإلكتروني:</label>
+                <label for="email">البريد الإلكتروني</label>
                 <input type="email" name="email" id="email" placeholder="البريد الإلكتروني" required>
                 @error('email')
                     <div class="alert alert-danger">{{ $message }}</div>

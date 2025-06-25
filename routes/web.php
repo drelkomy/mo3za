@@ -105,8 +105,11 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
 
 
 
-Route::get('/admin/forgot-password', [ForgotPasswordController::class, 'showLinkRequestForm'])->name('filament.admin.auth.password.request');
+Route::get('/admin/forgot-password', [ForgotPasswordController::class, 'showLinkRequestForm'])->middleware('guest')->name('filament.admin.auth.password.request');
 Route::post('/admin/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail'])->name('filament.admin.auth.password.email');
 
 Route::get('/admin/reset-password/{token}', [ResetPasswordController::class, 'showResetForm'])->name('filament.admin.auth.password.reset');
 Route::post('/admin/reset-password', [ResetPasswordController::class, 'reset'])->name('filament.admin.auth.password.store');
+Route::get('/admin/password-reset-success', function () {
+    return view('auth.passwords.success');
+})->name('password.success');
