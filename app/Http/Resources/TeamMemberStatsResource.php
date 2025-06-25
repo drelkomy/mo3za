@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\Http\Resources\MemberTaskSummaryResource;
 
 class TeamMemberStatsResource extends JsonResource
 {
@@ -21,7 +22,7 @@ class TeamMemberStatsResource extends JsonResource
                 'completion_rate' => $this['completion_rate'] ?? 0,
                 'completion_percentage_margin' => $this['completion_percentage_margin']
             ],
-            'recent_tasks' => $this['recent_tasks'] ?? []
+            'tasks' => isset($this['tasks']) ? MemberTaskSummaryResource::collection($this['tasks']) : []
         ];
     }
 }

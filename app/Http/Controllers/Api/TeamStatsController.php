@@ -9,6 +9,7 @@ use App\Http\Resources\MemberTaskResource;
 use App\Http\Resources\MemberTaskStatsResource;
 use App\Http\Resources\TeamMemberStatsResource;
 use App\Http\Resources\TeamSummaryResource;
+use App\Http\Resources\MemberTaskSummaryResource;
 use App\Models\Task;
 use App\Models\Team;
 use App\Models\User;
@@ -58,7 +59,10 @@ class TeamStatsController extends Controller
         
         // مسح كاش إحصائيات الفريق
         for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
+            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_");
+            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_pending");
+            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_in_progress");
+            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_completed");
         }
     }
     /**
@@ -279,15 +283,16 @@ class TeamStatsController extends Controller
     {
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
+        $status = $request->input('status');
         $team = Team::where('owner_id', auth()->id())->first();
         
         if (!$team) {
             return response()->json(['message' => 'أنت لست قائد فريق'], 403);
         }
         
-        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}";
+        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
         
-        $data = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage) {
+        $data = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
             // جلب أعضاء الفريق مع التصفيح
             $members = $team->members()
                 ->select('users.id', 'name', 'email', 'avatar_url')
@@ -336,8 +341,13 @@ class TeamStatsController extends Controller
                 $inProgressTasks = $memberTasks->where('status', 'in_progress')->count();
                 $averageProgress = $memberTasks->avg('progress') ?? 0;
                 
-                // المهام الأخيرة (5 مهام)
-                $recentTasks = $memberTasks->sortByDesc('created_at')->take(5)->map(function ($task) {
+                // فلترة المهام حسب الحالة إذا تم تحديدها
+                if ($status) {
+                    $memberTasks = $memberTasks->where('status', $status);
+                }
+                
+                // جلب جميع مهام العضو
+                $allMemberTasks = $memberTasks->sortByDesc('created_at')->values()->map(function ($task) {
                     return [
                         'id' => $task->id,
                         'title' => $task->title,
@@ -345,10 +355,10 @@ class TeamStatsController extends Controller
                         'progress' => $task->progress,
                         'due_date' => $task->due_date ? $task->due_date->format('Y-m-d') : null,
                         'created_at' => $task->created_at->format('Y-m-d'),
-                        'stages_count' => $task->stages->count(),
-                        'completed_stages' => $task->stages->where('status', 'completed')->count()
+                        'stages_count' => $task->stages ? $task->stages->count() : 0,
+                        'completed_stages' => $task->stages ? $task->stages->where('status', 'completed')->count() : 0
                     ];
-                })->values();
+                });
                 
                 $membersData[] = [
                     'id' => $member->id,
@@ -362,7 +372,7 @@ class TeamStatsController extends Controller
                     'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
                     'completion_percentage_margin' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) . '%' : '0%',
                     'average_progress' => round($averageProgress, 1),
-                    'recent_tasks' => $recentTasks
+                    'tasks' => $allMemberTasks
                 ];
             }
             
