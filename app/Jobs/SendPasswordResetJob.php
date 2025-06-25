@@ -31,12 +31,35 @@ class SendPasswordResetJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            // تحقق من أن البريد الإلكتروني مكتوب بشكل صحيح
+            if (!filter_var($this->user->email, FILTER_VALIDATE_EMAIL)) {
+                Log::warning('Invalid email format - skipping', [
+                    'user_id' => $this->user->id,
+                    'email' => $this->user->email
+                ]);
+                return; // لا ترسل بريد لمستخدم ببريد خاطئ
+            }
+
             $this->user->notify(new ResetPasswordCustom($this->token));
+
             Log::info('Password reset email sent successfully', [
                 'user_id' => $this->user->id,
                 'email' => $this->user->email
             ]);
+        } catch (\Swift_TransportException $e) {
+            // خطأ دائم (مثل البريد غير موجود أو السيرفر رفض الرسالة)
+            Log::error('SMTP transport error - job failed and will not retry', [
+                'user_id' => $this->user->id,
+                'email' => $this->user->email,
+                'error' => $e->getMessage()
+            ]);
+
+            // اختياري: حفظ البريد المرفوض في جدول خاص لتجاهله لاحقًا
+            // InvalidEmail::create(['email' => $this->user->email]);
+
+            $this->fail($e); // منع التكرار
         } catch (\Exception $e) {
+            // أخطاء أخرى: يمكن إعادة المحاولة
             Log::error('Failed to send password reset email', [
                 'user_id' => $this->user->id,
                 'email' => $this->user->email,
