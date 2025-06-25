@@ -19,7 +19,7 @@ class MyTeamResource extends JsonResource
             return Storage::url($user->avatar_url);
         }
         
-        return null;
+        return asset('default-avatar.png');
     }
     
     public function toArray($request)
@@ -66,6 +66,7 @@ class MyTeamResource extends JsonResource
                 'tasks_count' => $stats['tasks_count'],
                 'completed_tasks' => $stats['completed_tasks'],
                 'average_progress' => $stats['average_progress'],
+                'completion_percentage_margin' => $stats['tasks_count'] > 0 ? round(($stats['completed_tasks'] / $stats['tasks_count']) * 100, 2) . '%' : '0%',
                 'recent_tasks' => $this->getRecentTasks($member->id)
             ];
         })->values();
@@ -73,34 +74,48 @@ class MyTeamResource extends JsonResource
 
     private function getMemberStats(): Collection
     {
-        if (!$this->members || $this->members->isEmpty() || !$this->tasks) {
+        if (!$this->members || $this->members->isEmpty()) {
             return collect();
         }
 
         $memberIds = $this->members->pluck('id')->toArray();
         $result = collect();
         
-        // تجميع البيانات من المهام المحملة مسبقاً بدلاً من استعلام قاعدة البيانات مرة أخرى
+        // جلب إحصائيات المهام مباشرة من قاعدة البيانات
         foreach ($memberIds as $memberId) {
-            $memberTasks = $this->tasks->filter(function($task) use ($memberId) {
-                return $task->receiver_id == $memberId;
-            });
+            $totalTasks = \App\Models\Task::where('creator_id', $this->owner_id)
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $completedTasks = \App\Models\Task::where('creator_id', $this->owner_id)
+                ->where('status', 'completed')
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $averageProgress = \App\Models\Task::where('creator_id', $this->owner_id)
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->avg('progress') ?? 0;
             
-            if ($memberTasks->isNotEmpty()) {
-                $tasksCount = $memberTasks->count();
-                $completedTasks = $memberTasks->filter(function($task) {
-                    return $task->status === 'completed';
-                })->count();
-                
-                $progressSum = $memberTasks->sum('progress');
-                $averageProgress = $tasksCount > 0 ? round($progressSum / $tasksCount, 1) : 0;
-                
-                $result->put($memberId, [
-                    'tasks_count' => $tasksCount,
-                    'completed_tasks' => $completedTasks,
-                    'average_progress' => $averageProgress
-                ]);
-            }
+            $result->put($memberId, [
+                'tasks_count' => $totalTasks,
+                'completed_tasks' => $completedTasks,
+                'average_progress' => round($averageProgress, 1)
+            ]);
         }
         
         return $result;
@@ -108,44 +123,27 @@ class MyTeamResource extends JsonResource
 
     private function getRecentTasks($memberId): Collection
     {
-        $tasks = $this->tasks->filter(function($task) use ($memberId) {
-            return $task->receiver_id == $memberId;
-        });
-        
-        return $tasks
-            ->sortByDesc('id')
+        $tasks = \App\Models\Task::where('creator_id', $this->owner_id)
+            ->where('receiver_id', $memberId)
+            ->orderBy('id', 'desc')
             ->take(3)
-            ->map(function($task) {
-                return [
-                    'id' => $task->id,
-                    'title' => $task->title,
-                    'status' => $task->status,
-                    'progress' => $task->progress,
-                ];
-            })
-            ->values();
+            ->get(['id', 'title', 'status', 'progress']);
+        
+        return $tasks->map(function($task) {
+            return [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'progress' => $task->progress,
+            ];
+        });
     }
 
     private function getTasksSummary(): array
     {
-        if (!$this->tasks || $this->tasks->isEmpty()) {
-            return [
-                'total' => 0,
-                'completed' => 0,
-                'in_progress' => 0,
-                'pending' => 0,
-                'completion_rate' => 0
-            ];
-        }
-        
-        $totalTasks = $this->tasks->count();
-        $completedTasks = $this->tasks->filter(function($task) {
-            return $task->status === 'completed';
-        })->count();
-        
-        $inProgressTasks = $this->tasks->filter(function($task) {
-            return $task->status === 'in_progress';
-        })->count();
+        $totalTasks = \App\Models\Task::where('creator_id', $this->owner_id)->count();
+        $completedTasks = \App\Models\Task::where('creator_id', $this->owner_id)->where('status', 'completed')->count();
+        $inProgressTasks = \App\Models\Task::where('creator_id', $this->owner_id)->where('status', 'in_progress')->count();
 
         return [
             'total' => $totalTasks,

@@ -439,29 +439,42 @@ class TeamController extends Controller
             
             // جلب إحصائيات المهام لكل عضو
             $memberStats = $members->map(function ($member) use ($team) {
-                $totalTasks = Task::where('team_id', $team->id)
-                    ->where('receiver_id', $member->id)
+                // جلب المهام المرتبطة بالعضو كمستلم أو كعضو في مهمة متعددة
+                $totalTasks = Task::where('creator_id', $team->owner_id)
+                    ->where(function ($query) use ($member) {
+                        $query->where('receiver_id', $member->id)
+                              ->orWhereHas('members', function ($q) use ($member) {
+                                  $q->where('user_id', $member->id);
+                              });
+                    })
                     ->count();
                     
-                $completedTasks = Task::where('team_id', $team->id)
-                    ->where('receiver_id', $member->id)
+                $completedTasks = Task::where('creator_id', $team->owner_id)
                     ->where('status', 'completed')
+                    ->where(function ($query) use ($member) {
+                        $query->where('receiver_id', $member->id)
+                              ->orWhereHas('members', function ($q) use ($member) {
+                                  $q->where('user_id', $member->id);
+                              });
+                    })
                     ->count();
                     
-                $pendingTasks = Task::where('team_id', $team->id)
-                    ->where('receiver_id', $member->id)
+                $pendingTasks = Task::where('creator_id', $team->owner_id)
                     ->where('status', 'pending')
+                    ->where(function ($query) use ($member) {
+                        $query->where('receiver_id', $member->id)
+                              ->orWhereHas('members', function ($q) use ($member) {
+                                  $q->where('user_id', $member->id);
+                              });
+                    })
                     ->count();
                     
                 return [
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url,
-                    'total_tasks' => $totalTasks,
-                    'completed_tasks' => $completedTasks,
-                    'pending_tasks' => $pendingTasks,
-                    'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0
+                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : asset('default-avatar.png'),
+                    'completion_percentage_margin' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) . '%' : '0%'
                 ];
             });
             
@@ -476,6 +489,95 @@ class TeamController extends Controller
                 'details' => 'Exception occurred while fetching team member stats. Stack trace: ' . $e->getTraceAsString()
             ], 500);
         }
+    }
+
+    /**
+     * إحصائيات مهام عضو محدد
+     */
+    public function getMemberTaskStats(\App\Http\Requests\Api\MemberTaskStatsRequest $request): JsonResponse
+    {
+        $memberId = $request->input('member_id');
+        $team = Team::where('owner_id', auth()->id())->first();
+        
+        if (!$team) {
+            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
+        }
+        
+        // التحقق من أن العضو ينتمي للفريق
+        $isMember = $team->members()->where('user_id', $memberId)->exists();
+        if (!$isMember) {
+            return response()->json(['message' => 'العضو ليس في فريقك'], 403);
+        }
+        
+        $cacheKey = "member_task_stats_{$team->id}_{$memberId}";
+        
+        $stats = Cache::remember($cacheKey, 300, function () use ($team, $memberId) {
+            $member = User::find($memberId);
+            
+            $totalTasks = Task::where('creator_id', $team->owner_id)
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $completedTasks = Task::where('creator_id', $team->owner_id)
+                ->where('status', 'completed')
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $inProgressTasks = Task::where('creator_id', $team->owner_id)
+                ->where('status', 'in_progress')
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $pendingTasks = Task::where('creator_id', $team->owner_id)
+                ->where('status', 'pending')
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->count();
+                
+            $averageProgress = Task::where('creator_id', $team->owner_id)
+                ->where(function ($query) use ($memberId) {
+                    $query->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($q) use ($memberId) {
+                              $q->where('user_id', $memberId);
+                          });
+                })
+                ->avg('progress') ?? 0;
+                
+            return [
+                'member_id' => $memberId,
+                'member_name' => $member->name,
+                'total_tasks' => $totalTasks,
+                'completed_tasks' => $completedTasks,
+                'in_progress_tasks' => $inProgressTasks,
+                'pending_tasks' => $pendingTasks,
+                'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
+                'average_progress' => round($averageProgress, 1)
+            ];
+        });
+        
+        return response()->json([
+            'message' => 'تم جلب إحصائيات مهام العضو بنجاح',
+            'data' => new \App\Http\Resources\MemberTaskStatsResource($stats)
+        ])->setMaxAge(300)->setPublic();
     }
 
     /**
