@@ -74,6 +74,9 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/trial-status', [\App\Http\Controllers\Api\SubscriptionController::class, 'trialStatus']); // حالة الاشتراك التجريبي
     Route::get('/current-subscription', [\App\Http\Controllers\Api\SubscriptionController::class, 'currentSubscription']); // اشتراكي الحالي
     
+    // Financial Details - التفاصيل المالية
+    Route::get('/financial-details', [\App\Http\Controllers\Api\FinancialDetailController::class, 'index']); // عرض التفاصيل المالية
+    
     // Team Invitations - دعوات الفريق
     Route::post('/invitations/sent', [\App\Http\Controllers\Api\InvitationController::class, 'send'])
         ->middleware('throttle:20,1'); // إرسال دعوة

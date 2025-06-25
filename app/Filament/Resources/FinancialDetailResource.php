@@ -43,7 +43,8 @@ class FinancialDetailResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->hasRole('admin');
+        // Allow creation only if no record exists to enforce single record policy
+        return auth()->user()?->hasRole('admin') && FinancialDetail::count() === 0;
     }
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
@@ -74,6 +75,7 @@ class FinancialDetailResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('بيانات الدعم الفني')
+                    ->description('هذه البيانات هي الوحيدة التي يتم عرضها لجميع المستخدمين ولا ترتبط بأي شخص محدد. يمكن للأدمن فقط تعديلها.')
                     ->schema([
                         Forms\Components\TextInput::make('whatsapp_number')
                             ->label('رقم الواتساب')
@@ -87,6 +89,8 @@ class FinancialDetailResource extends Resource
                         Forms\Components\Textarea::make('bank_account_details')
                             ->label('تفاصيل الحساب البنكي')
                             ->rows(3),
+                        Forms\Components\Hidden::make('user_id')
+                            ->default(null) // Ensure no user is linked to this record
                     ])->columns(2),
             ]);
     }

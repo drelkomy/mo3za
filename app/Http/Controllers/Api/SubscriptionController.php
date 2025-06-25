@@ -19,7 +19,7 @@ class SubscriptionController extends Controller
 
         return response()->json([
             'message' => 'تم جلب الاشتراكات بنجاح',
-            'data' => $subscriptions
+            'data' => \App\Http\Resources\SubscriptionResource::collection($subscriptions)
         ]);
     }
 
