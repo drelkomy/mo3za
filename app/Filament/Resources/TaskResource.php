@@ -324,6 +324,15 @@ class TaskResource extends Resource
                                 'status' => 'completed',
                                 'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
+                        } elseif ($record->reward_type === 'other' && $record->reward_description) {
+                            \App\Models\Reward::create([
+                                'task_id' => $record->id,
+                                'giver_id' => $record->creator_id,
+                                'receiver_id' => $record->receiver_id,
+                                'amount' => 0,
+                                'status' => 'completed',
+                                'notes' => 'مكافأة مهمة: ' . $record->title,
+                            ]);
                         }
                         
                         \Filament\Notifications\Notification::make()

@@ -56,7 +56,7 @@ class RewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()->with('task');
         
         if (!auth()->user()?->hasRole('admin')) {
             // عرض المكافآت التي منحها الشخص فقط
@@ -82,7 +82,27 @@ class RewardResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('receiver.name')->label('المستخدم'),
-                Tables\Columns\TextColumn::make('amount')->label('المبلغ')->money('SAR'),
+                Tables\Columns\TextColumn::make('reward_type')
+                    ->label('نوع المكافأة')
+                    ->getStateUsing(function ($record) {
+                        if ($record->task && $record->task->reward_type === 'other') {
+                            return 'أخرى';
+                        }
+                        return 'نقدي';
+                    }),
+                Tables\Columns\TextColumn::make('amount')
+                    ->label('المبلغ')
+                    ->money('SAR'),
+                Tables\Columns\TextColumn::make('reward_description')
+                    ->label('وصف المكافأة')
+                    ->getStateUsing(function ($record) {
+                        if ($record->task && $record->task->reward_type === 'other') {
+                            return $record->task->reward_description ?? 'لا يوجد وصف';
+                        }
+                        return $record->notes ?? '-';
+                    })
+                    ->limit(30)
+                    ->placeholder('-'),
                 Tables\Columns\TextColumn::make('notes')->label('الملاحظات'),
                 Tables\Columns\TextColumn::make('status')->label('حالة الاستلام')
                     ->badge()
@@ -111,6 +131,7 @@ class RewardResource extends Resource
                     ->modalHeading('تأكيد استلام المكافأة')
                     ->modalDescription('هل تم استلام هذه المكافأة؟'),
             ])
+            ->defaultSort('created_at', 'desc')
             ->paginationPageOptions([5])
             ->defaultPaginationPageOption(5);
     }
