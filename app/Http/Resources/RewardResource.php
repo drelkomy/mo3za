@@ -43,13 +43,7 @@ class RewardResource extends JsonResource
         if (!$user) return null;
         
         if ($user->avatar_url) {
-            // التحقق من أن المسار يحتوي على الرابط الكامل
-            if (strpos($user->avatar_url, 'http') === 0) {
-                return $user->avatar_url;
-            }
-            
-            // إذا كان المسار نسبيًا
-            return "https://www.moezez.com/storage/" . basename($user->avatar_url);
+            return \Illuminate\Support\Facades\Storage::url($user->avatar_url);
         }
         
         return null;

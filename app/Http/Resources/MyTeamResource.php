@@ -16,7 +16,7 @@ class MyTeamResource extends JsonResource
         // التحقق من وجود صورة للمستخدم
         if ($user->avatar_url) {
             // استخدام نفس طريقة البروفايل بالضبط
-            return "https://www.moezez.com" . Storage::url($user->avatar_url);
+            return Storage::url($user->avatar_url);
         }
         
         return null;

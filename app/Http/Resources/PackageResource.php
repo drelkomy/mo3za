@@ -21,6 +21,8 @@ class PackageResource extends JsonResource
             'max_tasks_text' => $this->max_tasks == 0 ? 'غير محدود' : $this->max_tasks . ' مهمة',
             'max_team_members' => $this->max_team_members,
             'max_team_members_text' => $this->max_team_members == 0 ? 'غير محدود' : $this->max_team_members . ' عضو',
+            'max_stages_per_task' => $this->max_milestones_per_task,
+            'max_stages_per_task_text' => $this->max_milestones_per_task == 0 ? 'غير محدود' : $this->max_milestones_per_task . ' مرحلة',
             'features' => $this->features ? json_decode($this->features, true) : [],
             'is_trial' => $this->is_trial,
             'is_popular' => $this->is_popular ?? false,
