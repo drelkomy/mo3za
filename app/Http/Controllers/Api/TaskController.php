@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\TaskWithStagesResource;
 use App\Http\Resources\TaskResource;
-use App\Http\Resources\RewardResource;
 use App\Models\Task;
-use App\Models\Reward;
+use App\Models\Team;
+use App\Models\TaskStage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -15,6 +14,161 @@ use Illuminate\Support\Facades\DB;
 
 class TaskController extends Controller
 {
+    /**
+     * مسح كاش الفريق والأعضاء
+     */
+    private function clearTeamCache(Team $team): void
+    {
+        // مسح كاش الفريق
+        Cache::forget("my_team_" . $team->owner_id);
+        Cache::forget("user_team_" . $team->owner_id);
+        
+        // مسح كاش المهام
+        for ($i = 1; $i <= 5; $i++) { // مسح أول 5 صفحات
+            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_");
+            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_completed");
+            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_pending");
+            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_in_progress");
+        }
+        
+        // مسح كاش المكافآت
+        for ($i = 1; $i <= 5; $i++) {
+            Cache::forget("team_rewards_{$team->id}_page_{$i}_per_10_status_");
+        }
+        
+        // مسح كاش إحصائيات الأعضاء
+        $memberIds = $team->members()->pluck('user_id')->toArray();
+        foreach ($memberIds as $memberId) {
+            Cache::forget("my_team_" . $memberId);
+            Cache::forget("user_team_" . $memberId);
+            
+            // مسح كاش إحصائيات مهام العضو
+            for ($i = 1; $i <= 3; $i++) {
+                Cache::forget("member_task_stats_{$team->id}_{$memberId}_page_{$i}");
+            }
+            
+            // مسح كاش مهام العضو
+            Cache::forget("my_tasks_" . $memberId);
+        }
+        
+        // مسح كاش إحصائيات الفريق
+        for ($i = 1; $i <= 3; $i++) {
+            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
+        }
+    }
+    
+    /**
+     * مسح كاش المهمة
+     */
+    private function clearTaskCache(int $taskId, int $teamId, int $receiverId): void
+    {
+        // مسح كاش المهام
+        for ($i = 1; $i <= 5; $i++) {
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_completed");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_pending");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_in_progress");
+        }
+        
+        // مسح كاش مهام المستلم
+        Cache::forget("my_tasks_" . $receiverId);
+        
+        // مسح كاش إحصائيات المستلم
+        for ($i = 1; $i <= 3; $i++) {
+            Cache::forget("member_task_stats_{$teamId}_{$receiverId}_page_{$i}");
+        }
+        
+        // مسح كاش إحصائيات الفريق
+        for ($i = 1; $i <= 3; $i++) {
+            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_10");
+        }
+    }
+    
+    /**
+     * تحديث حالة المهمة
+     */
+    public function updateTaskStatus(\App\Http\Requests\Api\UpdateTaskStatusRequest $request, Task $task): JsonResponse
+    {
+        // التحقق من الصلاحيات
+        if ($task->creator_id !== auth()->id() && $task->receiver_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك بتحديث هذه المهمة'], 403);
+        }
+        
+        $status = $request->input('status');
+        
+        $task->update([
+            'status' => $status,
+            'progress' => $status === 'completed' ? 100 : ($status === 'in_progress' ? 50 : 0)
+        ]);
+        
+        // مسح الكاش المتعلق بالمهمة
+        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        
+        return response()->json([
+            'message' => 'تم تحديث حالة المهمة بنجاح',
+            'data' => new TaskResource($task)
+        ]);
+    }
+    
+    /**
+     * إكمال مرحلة من مراحل المهمة
+     */
+    public function completeStage(\App\Http\Requests\Api\CompleteStageRequest $request): JsonResponse
+    {
+        $stageId = $request->input('stage_id');
+        $stage = TaskStage::findOrFail($stageId);
+        $task = $stage->task;
+        
+        // التحقق من الصلاحيات
+        if ($task->receiver_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك بإكمال هذه المرحلة'], 403);
+        }
+        
+        $stage->update(['status' => 'completed']);
+        
+        // تحديث تقدم المهمة
+        $task->updateProgress();
+        
+        // مسح الكاش المتعلق بالمهمة
+        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        
+        return response()->json([
+            'message' => 'تم إكمال المرحلة بنجاح',
+            'data' => new TaskResource($task->fresh(['stages']))
+        ]);
+    }
+    
+    /**
+     * إغلاق المهمة
+     */
+    public function closeTask(\App\Http\Requests\Api\CloseTaskRequest $request): JsonResponse
+    {
+        $taskId = $request->input('task_id');
+        $task = Task::findOrFail($taskId);
+        
+        // التحقق من الصلاحيات
+        if ($task->creator_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك بإغلاق هذه المهمة'], 403);
+        }
+        
+        $task->update([
+            'status' => 'completed',
+            'progress' => 100,
+            'completed_at' => now()
+        ]);
+        
+        // مسح الكاش المتعلق بالمهمة
+        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        
+        return response()->json([
+            'message' => 'تم إغلاق المهمة بنجاح',
+            'data' => new TaskResource($task)
+        ]);
+    }
+    
+    /**
+     * عرض مهامي
+     */
     public function myTasks(\App\Http\Requests\Api\MyTasksRequest $request): JsonResponse
     {
         $page = $request->input('page', 1);
@@ -26,10 +180,9 @@ class TaskController extends Controller
         $tasksData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
             $query = Task::where('receiver_id', auth()->id())
                 ->with([
-                    'receiver:id,name,email,avatar_url', 
-                    'creator:id,name', 
+                    'creator:id,name,email',
                     'stages' => function($q) {
-                        $q->orderBy('order');
+                        $q->orderBy('stage_number');
                     }
                 ])
                 ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
@@ -49,7 +202,7 @@ class TaskController extends Controller
                 ->count();
                 
             $statusCounts = Task::where('receiver_id', auth()->id())
-                ->select('status', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
+                ->select('status', DB::raw('count(*) as count'))
                 ->groupBy('status')
                 ->pluck('count', 'status')
                 ->toArray();
@@ -64,193 +217,30 @@ class TaskController extends Controller
             ];
         });
         
+        if ($tasksData['total'] == 0) {
+            return response()->json([
+                'message' => 'لا توجد مهام مسندة إليك حاليًا',
+                'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'status_counts' => [],
+                    'current_page' => $tasksData['current_page'],
+                    'per_page' => $tasksData['per_page'],
+                    'last_page' => $tasksData['last_page']
+                ]
+            ])->setMaxAge(300)->setPublic();
+        }
+
         return response()->json([
-            'message' => 'تم جلب مهامي بنجاح',
+            'message' => 'تم جلب مهامك بنجاح',
             'data' => TaskResource::collection($tasksData['tasks']),
             'meta' => [
                 'total' => $tasksData['total'],
-                'status_counts' => $tasksData['status_counts'] ?? [],
+                'status_counts' => $tasksData['status_counts'],
                 'current_page' => $tasksData['current_page'],
                 'per_page' => $tasksData['per_page'],
                 'last_page' => $tasksData['last_page']
             ]
-        ])->setMaxAge(300)->setPublic();
-    }
-
-    public function completeStage(\App\Http\Requests\Api\CompleteStageRequest $request): JsonResponse
-    {
-        $stage = \App\Models\TaskStage::findOrFail($request->stage_id);
-        
-        // التحقق من أن المستخدم مكلف بهذه المهمة
-        if ($stage->task->assigned_to !== auth()->id()) {
-            return response()->json(['message' => 'غير مصرح لك بإتمام هذه المرحلة'], 403);
-        }
-        
-        // التحقق من أن المرحلة لم تكتمل بعد
-        if ($stage->status === 'completed') {
-            return response()->json(['message' => 'هذه المرحلة مكتملة بالفعل'], 400);
-        }
-        
-        // رفع الملفات إن وجدت
-        $uploadedFiles = [];
-        if ($request->hasFile('proof_files')) {
-            foreach ($request->file('proof_files') as $file) {
-                $path = $file->store('task_proofs/' . $stage->task_id, 'public');
-                $uploadedFiles[] = [
-                    'name' => $file->getClientOriginalName(),
-                    'path' => $path,
-                    'size' => $file->getSize(),
-                ];
-            }
-        }
-        
-        // إتمام المرحلة
-        $stage->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-            'proof_notes' => $request->proof_notes,
-            'proof_files' => $uploadedFiles,
-        ]);
-        
-        // تحديث تقدم المهمة
-        $taskService = app(\App\Services\TaskService::class);
-        $taskService->updateTaskProgress($stage->task);
-        
-        // مسح الـ cache
-        Cache::forget('my_tasks_' . auth()->id() . '_*');
-        
-        return response()->json([
-            'message' => 'تم إتمام المرحلة بنجاح',
-            'stage' => new \App\Http\Resources\TaskStageResource($stage->fresh())
-        ]);
-    }
-
-    public function closeTask(\App\Http\Requests\Api\CloseTaskRequest $request): JsonResponse
-    {
-        $task = \App\Models\Task::findOrFail($request->task_id);
-        
-        // التحقق من أن المستخدم هو منشئ المهمة
-        if ($task->creator_id !== auth()->id()) {
-            return response()->json(['message' => 'غير مصرح لك بإغلاق هذه المهمة'], 403);
-        }
-        
-        // التحقق من أن المهمة لم تغلق بعد
-        if (in_array($task->status, ['completed', 'not_completed'])) {
-            return response()->json(['message' => 'هذه المهمة مغلقة بالفعل'], 400);
-        }
-        
-        $taskService = app(\App\Services\TaskService::class);
-        
-        if ($request->status === 'completed') {
-            // إغلاق بحالة مكتمل مع توزيع المكافأة
-            $taskService->completeTaskByLeader($task, true);
-            $message = 'تم إغلاق المهمة بنجاح وتوزيع المكافأة';
-        } else {
-            // إغلاق بحالة غير مكتمل بدون توزيع مكافأة
-            $task->update([
-                'status' => 'not_completed',
-                'completed_at' => now(),
-            ]);
-            $message = 'تم إغلاق المهمة بدون إنجاز';
-        }
-        
-        // مسح الـ cache
-        Cache::forget('my_tasks_' . $task->assigned_to . '_*');
-        Cache::forget('team_tasks_' . $task->team_id . '_*');
-        
-        return response()->json([
-            'message' => $message,
-            'task' => new \App\Http\Resources\TaskResource($task->fresh()->load('assignedTo', 'creator'))
-        ]);
-    }
-
-    public function myRewards(\App\Http\Requests\Api\MyRewardsRequest $request): JsonResponse
-    {
-        $page = $request->input('page', 1);
-        $perPage = min($request->input('per_page', 10), 50);
-        $status = $request->input('status');
-        
-        $cacheKey = "my_rewards_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$status}";
-        
-        $rewardsData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
-            $query = \App\Models\Reward::where('receiver_id', auth()->id())
-                ->with([
-                    'task:id,title,team_id,reward_type,reward_description', 
-                    'giver:id,name,email,avatar_url'
-                ])
-                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'reward_type', 'reward_description', 'created_at')
-                ->orderBy('created_at', 'desc');
-            
-            if ($status) {
-                $query->where('status', $status);
-            }
-            
-            $rewards = $query->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
-            
-            $total = \App\Models\Reward::where('receiver_id', auth()->id())
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->count();
-            
-            $totalAmount = \App\Models\Reward::where('receiver_id', auth()->id())
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->sum('amount');
-                
-            $statusCounts = \App\Models\Reward::where('receiver_id', auth()->id())
-                ->select('status', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
-            
-            return [
-                'rewards' => $rewards,
-                'total' => $total,
-                'total_amount' => $totalAmount,
-                'status_counts' => $statusCounts,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
-            ];
-        });
-        
-        return response()->json([
-            'message' => 'تم جلب مكافآتي بنجاح',
-            'data' => \App\Http\Resources\RewardResource::collection($rewardsData['rewards']),
-            'meta' => [
-                'total' => $rewardsData['total'],
-                'total_amount' => $rewardsData['total_amount'],
-                'status_counts' => $rewardsData['status_counts'] ?? [],
-                'current_page' => $rewardsData['current_page'],
-                'per_page' => $rewardsData['per_page'],
-                'last_page' => $rewardsData['last_page']
-            ]
-        ])->setMaxAge(300)->setPublic();
-    }
-    
-    public function getTaskStages(Request $request, Task $task): JsonResponse
-    {
-        // التحقق من أن المستخدم لديه صلاحية لعرض المهمة
-        if ($task->receiver_id !== auth()->id() && $task->creator_id !== auth()->id()) {
-            return response()->json(['message' => 'غير مصرح لك بعرض مراحل هذه المهمة'], 403);
-        }
-        
-        $query = $task->stages();
-        
-        // التحقق من وجود معلمات إضافية عبر form-data
-        if ($request->has('status')) {
-            $query->where('status', $request->input('status'));
-        }
-        
-        if ($request->has('order')) {
-            $query->where('order', $request->input('order'));
-        }
-        
-        $stages = $query->orderBy('order')->get();
-        
-        return response()->json([
-            'message' => 'تم جلب مراحل المهمة بنجاح',
-            'data' => \App\Http\Resources\TaskStageResource::collection($stages)
         ])->setMaxAge(300)->setPublic();
     }
 }
