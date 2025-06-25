@@ -3,9 +3,8 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
-class TaskResource extends JsonResource
+class TeamTaskResource extends JsonResource
 {
     public function toArray($request)
     {

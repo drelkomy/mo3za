@@ -10,6 +10,7 @@ use App\Http\Requests\Api\UpdateTeamNameRequest;
 use App\Http\Resources\TeamDetailResource;
 use App\Http\Resources\TaskResource;
 use App\Http\Resources\RewardResource;
+use App\Http\Resources\TeamRewardResource;
 use App\Models\Team;
 use App\Models\Task;
 use App\Models\TaskStage;
@@ -123,7 +124,7 @@ class TeamController extends Controller
         $team = $this->getUserTeam();
         if (!$team) {
             return response()->json([
-                'message' => 'لا تملك فريقاً',
+                'message' => 'لا تملك فريقاً أو لست عضوًا في أي فريق. يرجى إنشاء فريق أو الانضمام إلى فريق لعرض المهام.',
                 'data' => null
             ], 404);
         }
@@ -175,9 +176,23 @@ class TeamController extends Controller
             ];
         });
         
+        if ($tasksData['total'] == 0) {
+            return response()->json([
+                'message' => 'لا توجد مهام مرتبطة بفريقك حاليًا',
+                'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'status_counts' => [],
+                    'current_page' => $tasksData['current_page'],
+                    'per_page' => $tasksData['per_page'],
+                    'last_page' => $tasksData['last_page']
+                ]
+            ])->setMaxAge(300)->setPublic();
+        }
+
         return response()->json([
             'message' => 'تم جلب مهام الفريق بنجاح',
-            'data' => TaskResource::collection($tasksData['tasks']),
+            'data' => TeamTaskResource::collection($tasksData['tasks']),
             'meta' => [
                 'total' => $tasksData['total'],
                 'status_counts' => $tasksData['status_counts'],
@@ -193,7 +208,7 @@ class TeamController extends Controller
      */
     public function getTeamRewards(\App\Http\Requests\Api\TeamRewardsRequest $request): JsonResponse
     {
-        // التحقق من وجود فريق للمستخدم
+        // التحقق من وجود فريق للمستخدم (سواء كان مالكاً أو عضواً)
         $team = $this->getUserTeam();
         if (!$team) {
             return response()->json([
@@ -212,13 +227,14 @@ class TeamController extends Controller
             // الحصول على معرفات أعضاء الفريق
             $teamMemberIds = $team->members()->pluck('user_id')->push($team->owner_id)->toArray();
             
-            $query = Reward::whereIn('receiver_id', $teamMemberIds)
+            $query = Reward::where('giver_id', auth()->id())
+                ->whereIn('receiver_id', $teamMemberIds)
                 ->with([
                     'receiver:id,name,email,avatar_url',
-                    'task:id,title,team_id',
-                    'giver:id,name,email'
+                    'task:id,title,team_id,reward_type,reward_description',
+                    'giver:id,name,email,avatar_url'
                 ])
-                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'created_at');
+                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'reward_type', 'reward_description', 'created_at');
             
             if ($status) {
                 $query->where('status', $status);
@@ -229,22 +245,26 @@ class TeamController extends Controller
                 ->take($perPage)
                 ->get();
             
-            $total = Reward::whereIn('receiver_id', $teamMemberIds)
+            $total = Reward::where('giver_id', auth()->id())
+                ->whereIn('receiver_id', $teamMemberIds)
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->count();
                 
-            $totalAmount = Reward::whereIn('receiver_id', $teamMemberIds)
+            $totalAmount = Reward::where('giver_id', auth()->id())
+                ->whereIn('receiver_id', $teamMemberIds)
                 ->when($status, fn($q) => $q->where('status', $status))
                 ->sum('amount');
                 
-            $userStats = Reward::whereIn('receiver_id', $teamMemberIds)
+            $userStats = Reward::where('giver_id', auth()->id())
+                ->whereIn('receiver_id', $teamMemberIds)
                 ->select('receiver_id', DB::raw('SUM(amount) as total_amount'), DB::raw('COUNT(*) as count'))
                 ->groupBy('receiver_id')
                 ->get()
                 ->keyBy('receiver_id')
                 ->toArray();
                 
-            $statusCounts = Reward::whereIn('receiver_id', $teamMemberIds)
+            $statusCounts = Reward::where('giver_id', auth()->id())
+                ->whereIn('receiver_id', $teamMemberIds)
                 ->select('status', DB::raw('count(*) as count'))
                 ->groupBy('status')
                 ->pluck('count', 'status')
@@ -262,9 +282,25 @@ class TeamController extends Controller
             ];
         });
         
+        if ($rewardsData['total'] == 0) {
+            return response()->json([
+                'message' => 'لم تقم بتوزيع أي مكافآت لأعضاء الفريق',
+                'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'total_amount' => 0,
+                    'user_stats' => [],
+                    'status_counts' => [],
+                    'current_page' => $rewardsData['current_page'],
+                    'per_page' => $rewardsData['per_page'],
+                    'last_page' => $rewardsData['last_page']
+                ]
+            ])->setMaxAge(300)->setPublic();
+        }
+        
         return response()->json([
             'message' => 'تم جلب مكافآت الفريق بنجاح',
-            'data' => RewardResource::collection($rewardsData['rewards']),
+            'data' => TeamRewardResource::collection($rewardsData['rewards']),
             'meta' => [
                 'total' => $rewardsData['total'],
                 'total_amount' => $rewardsData['total_amount'],

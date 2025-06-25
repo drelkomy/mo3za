@@ -26,7 +26,7 @@ class MemberPanelProvider extends PanelProvider
             ->id('member')
             ->path('member')
             ->login()
-            ->passwordReset()
+            ->passwordReset(\App\Filament\Pages\Auth\CustomRequestPasswordReset::class)
             ->font('cairo')
             ->colors([
                 'primary' =>'#006E82',

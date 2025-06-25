@@ -59,6 +59,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         ->middleware('throttle:10,1'); // 10 إغلاق في الدقيقة
     Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآتي
+    Route::post('/tasks/{task}/stages', [\App\Http\Controllers\Api\TaskController::class, 'getTaskStages'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مراحل مهمة محددة
 
     // Packages & Subscriptions - الباقات والاشتراكات
     Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات المدفوعة

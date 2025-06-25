@@ -4,70 +4,76 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 
 class ResetPasswordCustom extends Notification implements ShouldQueue
 {
     use Queueable;
-    
+
     public $tries = 3;
     public $timeout = 60;
 
-    public $token;
+    protected string $token;
 
-    /**
-     * Create a new notification instance.
-     */
-    public function __construct($token)
+    public function __construct(string $token)
     {
         $this->token = $token;
-        $this->onQueue('emails');
+
         Log::info('ResetPasswordCustom notification created', ['token' => $token]);
     }
 
-    /**
-     * Get the notification's delivery channels.
-     *
-     * @return array<int, string>
-     */
+    public function viaQueues(): array
+    {
+        return [
+            'mail' => 'emails',
+        ];
+    }
+
     public function via(object $notifiable): array
     {
         Log::info('Sending password reset notification via mail');
         return ['mail'];
     }
 
-    /**
-     * Get the mail representation of the notification.
-     */
     public function toMail(object $notifiable): MailMessage
     {
-        $url = url(route('filament.admin.auth.password-reset.reset', [
-            'token' => $this->token,
-            'email' => $notifiable->getEmailForPasswordReset(),
-        ], false));
-        
-        Log::info('Building password reset mail', ['url' => $url, 'user_id' => $notifiable->id]);
-        
+        $url = URL::temporarySignedRoute(
+            'filament.admin.auth.password.reset',
+            now()->addMinutes(config('auth.passwords.users.expire', 60)),
+            [
+                'token' => $this->token,
+                'email' => $notifiable->getEmailForPasswordReset(),
+            ],
+            true
+        );
+
+        Log::info('Building password reset mail', [
+            'url' => $url,
+            'user_id' => $notifiable->id,
+        ]);
+
         return (new MailMessage)
             ->subject('إعادة تعيين كلمة المرور - ' . config('app.name'))
             ->view('emails.password-reset', [
                 'user' => $notifiable,
                 'url' => $url,
-                'token' => $this->token
+                'token' => $this->token,
             ]);
     }
 
-    /**
-     * Get the array representation of the notification.
-     *
-     * @return array<string, mixed>
-     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('ResetPasswordCustom notification failed', [
+            'token' => $this->token,
+            'error' => $exception->getMessage(),
+        ]);
+    }
+
     public function toArray(object $notifiable): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 }

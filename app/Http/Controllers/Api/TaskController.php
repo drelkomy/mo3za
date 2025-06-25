@@ -29,7 +29,7 @@ class TaskController extends Controller
                     'receiver:id,name,email,avatar_url', 
                     'creator:id,name', 
                     'stages' => function($q) {
-                        $q->orderBy('stage_number');
+                        $q->orderBy('order');
                     }
                 ])
                 ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
@@ -175,10 +175,10 @@ class TaskController extends Controller
         $rewardsData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
             $query = \App\Models\Reward::where('receiver_id', auth()->id())
                 ->with([
-                    'task:id,title,team_id', 
-                    'giver:id,name,email'
+                    'task:id,title,team_id,reward_type,reward_description', 
+                    'giver:id,name,email,avatar_url'
                 ])
-                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'created_at')
+                ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'reward_type', 'reward_description', 'created_at')
                 ->orderBy('created_at', 'desc');
             
             if ($status) {
@@ -225,6 +225,32 @@ class TaskController extends Controller
                 'per_page' => $rewardsData['per_page'],
                 'last_page' => $rewardsData['last_page']
             ]
+        ])->setMaxAge(300)->setPublic();
+    }
+    
+    public function getTaskStages(Request $request, Task $task): JsonResponse
+    {
+        // التحقق من أن المستخدم لديه صلاحية لعرض المهمة
+        if ($task->receiver_id !== auth()->id() && $task->creator_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك بعرض مراحل هذه المهمة'], 403);
+        }
+        
+        $query = $task->stages();
+        
+        // التحقق من وجود معلمات إضافية عبر form-data
+        if ($request->has('status')) {
+            $query->where('status', $request->input('status'));
+        }
+        
+        if ($request->has('order')) {
+            $query->where('order', $request->input('order'));
+        }
+        
+        $stages = $query->orderBy('order')->get();
+        
+        return response()->json([
+            'message' => 'تم جلب مراحل المهمة بنجاح',
+            'data' => \App\Http\Resources\TaskStageResource::collection($stages)
         ])->setMaxAge(300)->setPublic();
     }
 }

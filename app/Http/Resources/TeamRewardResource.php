@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
 
-class RewardResource extends JsonResource
+class TeamRewardResource extends JsonResource
 {
     public function toArray($request)
     {
@@ -34,14 +34,14 @@ class RewardResource extends JsonResource
                     'avatar_url' => $this->getAvatarUrl($this->giver),
                 ];
             }),
-            'reward_type' => $this->reward_type ?? ($this->whenLoaded('task', function () {
-                return $this->task->reward_type ?? 'نقدي';
-            }, 'نقدي')),
-            'reward_description' => $this->reward_description ?? ($this->whenLoaded('task', function () {
-                return $this->task->reward_description ?? '';
-            }, '')),
-            'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
-            'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
+'reward_type' => $this->reward_type ?? ($this->whenLoaded('task', function () {
+                return $this->task->reward_type ?? 'other';
+            }, 'other')),
+'reward_description' => $this->reward_description ?? ($this->whenLoaded('task', function () {
+                return $this->task->reward_description ?? 'يوم اجازة اضافي';
+            }, 'يوم اجازة اضافي')),
+'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
+'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
         ];
     }
     
