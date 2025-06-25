@@ -52,14 +52,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق
     // إحصائيات الفريق
     Route::get('/team/member-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getMemberStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات عضو محدد
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات أعضاء الفريق
     Route::get('/team/members-task-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getTeamMembersTaskStats'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام جميع أعضاء الفريق
     Route::post('/team/member-task-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getMemberTaskStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام عضو محدد
-    Route::get('/team/members-task-stats', [TeamController::class, 'getTeamMembersTaskStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام جميع أعضاء الفريق
-    Route::post('/team/member-task-stats', [TeamController::class, 'getMemberTaskStats'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام عضو محدد
     Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهامي الشخصية
