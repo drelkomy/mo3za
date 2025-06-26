@@ -6,22 +6,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class MemberTaskResource extends JsonResource
 {
-    public function toArray($request)
+    public function toArray($request): array
     {
         return [
             'id' => $this->id,
             'title' => $this->title,
             'status' => $this->status,
             'progress' => $this->progress,
-            'due_date' => $this->due_date ? $this->due_date->format('Y-m-d') : null,
-            'stages' => $this->stages->map(function($stage) {
-                return [
-                    'id' => $stage->id,
-                    'title' => $stage->title,
-                    'status' => $stage->status,
-                    'stage_number' => $stage->stage_number
-                ];
-            })
+            'due_date' => $this->due_date?->format('Y-m-d'),
+            'created_at' => $this->created_at->format('Y-m-d'),
+            'stages_count' => $this->stages?->count() ?? 0,
+            'completed_stages' => $this->stages?->where('status', 'completed')->count() ?? 0
         ];
     }
 }

@@ -132,11 +132,12 @@ class TeamStatsController extends Controller
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : asset('default-avatar.png'),
+                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : null,
                     'total_tasks' => $totalTasks,
                     'completed_tasks' => $completedTasks,
                     'pending_tasks' => $pendingTasks,
                     'in_progress_tasks' => $inProgressTasks,
+                    'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
                     'completion_percentage_margin' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) . '%' : '0%'
                 ];
             }
@@ -152,7 +153,10 @@ class TeamStatsController extends Controller
             
             return response()->json([
                 'message' => 'تم جلب إحصائيات أعضاء الفريق بنجاح',
-                'data' => TeamMemberStatsResource::collection($result)
+                'data' => [
+                    'members' => TeamMemberStatsResource::collection($result),
+                    'team_summary' => $teamSummary
+                ]
             ])->setMaxAge(300)->setPublic();
         } catch (\Exception $e) {
             return response()->json([
@@ -293,16 +297,17 @@ class TeamStatsController extends Controller
         $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
         
         $data = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
-            // جلب أعضاء الفريق مع التصفيح
-            $members = $team->members()
-                ->select('users.id', 'name', 'email', 'avatar_url')
+            // جلب أعضاء الفريق مع التصفيح، بما في ذلك المالك
+            $memberIds = $team->members()->pluck('user_id')->push($team->owner_id)->unique();
+            $totalMembers = $memberIds->count();
+            
+            $members = User::whereIn('id', $memberIds)
+                ->select('id', 'name', 'email', 'avatar_url')
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
             
-            $totalMembers = $team->members()->count();
-            
-            // جلب جميع مهام الفريق مرة واحدة
+            // جلب جميع مهام الفريق مرة واحدة بناءً على creator_id
             $allTeamTasks = Task::where('creator_id', $team->owner_id)
                 ->with(['stages' => function($q) {
                     $q->orderBy('stage_number');
@@ -364,7 +369,7 @@ class TeamStatsController extends Controller
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : asset('default-avatar.png'),
+                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : null,
                     'total_tasks' => $totalTasks,
                     'completed_tasks' => $completedTasks,
                     'pending_tasks' => $pendingTasks,

@@ -67,7 +67,7 @@ class MyTeamResource extends JsonResource
                 'completed_tasks' => $stats['completed_tasks'],
                 'average_progress' => $stats['average_progress'],
                 'completion_percentage_margin' => $stats['tasks_count'] > 0 ? round(($stats['completed_tasks'] / $stats['tasks_count']) * 100, 2) . '%' : '0%',
-                'recent_tasks' => $this->getRecentTasks($member->id)
+                'all_tasks' => $this->getAllTasks($member->id)
             ];
         })->values();
     }
@@ -83,33 +83,11 @@ class MyTeamResource extends JsonResource
         
         // جلب إحصائيات المهام مباشرة من قاعدة البيانات
         foreach ($memberIds as $memberId) {
-            $totalTasks = \App\Models\Task::where('creator_id', $this->owner_id)
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->count();
-                
-            $completedTasks = \App\Models\Task::where('creator_id', $this->owner_id)
-                ->where('status', 'completed')
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->count();
-                
-            $averageProgress = \App\Models\Task::where('creator_id', $this->owner_id)
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->avg('progress') ?? 0;
+            $memberTasks = \App\Models\Task::where('receiver_id', $memberId)->get();
+            
+            $totalTasks = $memberTasks->count();
+            $completedTasks = $memberTasks->where('status', 'completed')->count();
+            $averageProgress = $totalTasks > 0 ? $memberTasks->avg('progress') : 0;
             
             $result->put($memberId, [
                 'tasks_count' => $totalTasks,
@@ -121,35 +99,48 @@ class MyTeamResource extends JsonResource
         return $result;
     }
 
-    private function getRecentTasks($memberId): Collection
+    private function getAllTasks($memberId): Collection
     {
-        $tasks = \App\Models\Task::where('creator_id', $this->owner_id)
-            ->where('receiver_id', $memberId)
-            ->orderBy('id', 'desc')
-            ->take(3)
-            ->get(['id', 'title', 'status', 'progress']);
+        $tasks = \App\Models\Task::where('receiver_id', $memberId)
+            ->with(['creator:id,name', 'stages:id,task_id,title,status'])
+            ->orderBy('created_at', 'desc')
+            ->get(['id', 'title', 'description', 'status', 'progress', 'creator_id', 'created_at', 'due_date']);
         
         return $tasks->map(function($task) {
             return [
                 'id' => $task->id,
                 'title' => $task->title,
+                'description' => strip_tags($task->description),
                 'status' => $task->status,
                 'progress' => $task->progress,
+                'creator' => $task->creator ? [
+                    'id' => $task->creator->id,
+                    'name' => $task->creator->name
+                ] : null,
+                'stages_count' => $task->stages ? $task->stages->count() : 0,
+                'completed_stages' => $task->stages ? $task->stages->where('status', 'completed')->count() : 0,
+                'due_date' => $task->due_date ? $task->due_date->format('Y-m-d') : null,
+                'created_at' => $task->created_at->format('Y-m-d H:i:s'),
             ];
         });
     }
 
     private function getTasksSummary(): array
     {
-        $totalTasks = \App\Models\Task::where('creator_id', $this->owner_id)->count();
-        $completedTasks = \App\Models\Task::where('creator_id', $this->owner_id)->where('status', 'completed')->count();
-        $inProgressTasks = \App\Models\Task::where('creator_id', $this->owner_id)->where('status', 'in_progress')->count();
+        // جلب مهام أعضاء الفريق فقط
+        $teamMemberIds = $this->members->pluck('id')->push($this->owner_id)->toArray();
+        $teamTasks = \App\Models\Task::whereIn('receiver_id', $teamMemberIds)->get();
+        
+        $totalTasks = $teamTasks->count();
+        $completedTasks = $teamTasks->where('status', 'completed')->count();
+        $inProgressTasks = $teamTasks->where('status', 'in_progress')->count();
+        $pendingTasks = $teamTasks->where('status', 'pending')->count();
 
         return [
             'total' => $totalTasks,
             'completed' => $completedTasks,
             'in_progress' => $inProgressTasks,
-            'pending' => $totalTasks - $completedTasks - $inProgressTasks,
+            'pending' => $pendingTasks,
             'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 1) : 0
         ];
     }

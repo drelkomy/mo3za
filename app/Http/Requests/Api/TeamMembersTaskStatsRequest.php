@@ -14,9 +14,9 @@ class TeamMembersTaskStatsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'page' => 'sometimes|integer|min:1',
-            'per_page' => 'sometimes|integer|min:1|max:50',
-            'status' => 'sometimes|string|in:pending,in_progress,completed'
+            'page' => 'integer|min:1',
+            'per_page' => 'integer|min:1|max:50',
+            'status' => 'string|in:pending,in_progress,completed'
         ];
     }
 }

@@ -114,10 +114,9 @@ class TeamController extends Controller
                 'owner:id,name,email',
                 'members:id,name,email,avatar_url',
                 'tasks' => function($query) {
-                    $query->select('id', 'team_id', 'title', 'status', 'receiver_id', 'progress')
-                          ->with('receiver:id,name')
-                          ->orderBy('created_at', 'desc')
-                          ->take(10);
+                    $query->select('id', 'team_id', 'title', 'description', 'status', 'receiver_id', 'progress', 'created_at', 'due_date')
+                          ->with(['receiver:id,name', 'creator:id,name', 'stages:id,task_id,title,status'])
+                          ->orderBy('created_at', 'desc');
                 }
             ])
             ->select('id', 'name', 'owner_id', 'created_at')
@@ -513,46 +512,15 @@ class TeamController extends Controller
      */
     private function calculateMemberStats(Team $team, $member): array
     {
-        $totalTasks = Task::where('team_id', $team->id)
-            ->where(function ($q) use ($member) {
-                $q->where('receiver_id', $member->id)
-                  ->orWhereHas('members', function ($query) use ($member) {
-                      $query->where('user_id', $member->id);
-                  });
-            })
-            ->count();
-
-        $completedTasks = Task::where('team_id', $team->id)
-            ->where('status', 'completed')
-            ->where(function ($q) use ($member) {
-                $q->where('receiver_id', $member->id)
-                  ->orWhereHas('members', function ($query) use ($member) {
-                      $query->where('user_id', $member->id);
-                  });
-            })
-            ->count();
-
-        $inProgressTasks = Task::where('team_id', $team->id)
-            ->where('status', 'in_progress')
-            ->where(function ($q) use ($member) {
-                $q->where('receiver_id', $member->id)
-                  ->orWhereHas('members', function ($query) use ($member) {
-                      $query->where('user_id', $member->id);
-                  });
-            })
-            ->count();
-
-        $pendingTasks = $totalTasks - $completedTasks - $inProgressTasks;
-
-        $averageProgress = $totalTasks > 0 ? 
-            round(Task::where('team_id', $team->id)
-                ->where(function ($q) use ($member) {
-                    $q->where('receiver_id', $member->id)
-                      ->orWhereHas('members', function ($query) use ($member) {
-                          $query->where('user_id', $member->id);
-                      });
-                })
-                ->avg('progress'), 1) : 0;
+        // جلب جميع المهام للعضو (بدون فلترة team_id)
+        $memberTasks = Task::where('receiver_id', $member->id)->get();
+        
+        $totalTasks = $memberTasks->count();
+        $completedTasks = $memberTasks->where('status', 'completed')->count();
+        $inProgressTasks = $memberTasks->where('status', 'in_progress')->count();
+        $pendingTasks = $memberTasks->where('status', 'pending')->count();
+        
+        $averageProgress = $totalTasks > 0 ? round($memberTasks->avg('progress'), 1) : 0;
 
         return [
             'total_tasks' => $totalTasks,
@@ -565,14 +533,38 @@ class TeamController extends Controller
     }
 
     /**
+     * حساب معدل الإنجاز
+     */
+    private function calculateCompletionRate($tasks): string
+    {
+        if (empty($tasks) || count($tasks) == 0) return '0%';
+        
+        $completed = 0;
+        foreach ($tasks as $task) {
+            if ($task->status === 'completed') {
+                $completed++;
+            }
+        }
+        
+        $rate = round(($completed / count($tasks)) * 100, 2);
+        return $rate . '%';
+    }
+    
+    /**
      * تنسيق المهمة للعرض
      */
     private function formatTaskForDisplay($task): array
     {
+        $cleanDescription = null;
+        if ($task->description) {
+            $cleanDescription = strip_tags($task->description);
+            $cleanDescription = strlen($cleanDescription) > 100 ? substr($cleanDescription, 0, 100) . '...' : $cleanDescription;
+        }
+        
         return [
             'id' => $task->id,
             'title' => $task->title,
-            'description' => $task->description ? (strlen($task->description) > 100 ? substr($task->description, 0, 100) . '...' : $task->description) : null,
+            'description' => $cleanDescription,
             'status' => $task->status,
             'progress' => $task->progress,
             'priority' => $task->priority,
@@ -588,8 +580,7 @@ class TeamController extends Controller
     }
 
     /**
-     * عرض إحصائيات مهام أعضاء الفريق مع 10 مهام كحد أقصى في الصفحة الواحدة
-     * يتم عرض المهام بشكل متتالي - 10 مهام للعضو الأول، ثم 10 للثاني، وهكذا
+     * عرض إحصائيات مهام أعضاء الفريق
      */
     public function getMembersTaskStats(Request $request): JsonResponse
     {
@@ -602,11 +593,11 @@ class TeamController extends Controller
         }
 
         $page = $request->input('page', 1);
-        $tasksPerPage = 10; // عدد ثابت من المهام في الصفحة الواحدة
+        $perPage = min($request->input('per_page', 10), 50);
         
-        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_tasks_per_page_{$tasksPerPage}";
+        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}";
 
-        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $tasksPerPage) {
+        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage) {
             // جلب جميع أعضاء الفريق مع تضمين مالك الفريق
             $allMembers = collect();
             
@@ -630,7 +621,7 @@ class TeamController extends Controller
                 }
             });
 
-            // جمع جميع المهام من جميع الأعضاء في مجموعة واحدة
+            // جلب جميع المهام المتعلقة بالفريق
             $allTasks = Task::where('team_id', $team->id)
                 ->with([
                     'receiver:id,name,email,avatar_url',
@@ -645,122 +636,91 @@ class TeamController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            // حساب إجمالي المهام
-            $totalTasks = $allTasks->count();
-            $totalPages = $totalTasks > 0 ? ceil($totalTasks / $tasksPerPage) : 1;
+            // جلب العلاقة بين المهام والأعضاء
+            $taskUserRelations = DB::table('task_user')
+                ->whereIn('task_id', $allTasks->pluck('id')->toArray())
+                ->get();
             
-            // جلب المهام للصفحة المطلوبة
-            $paginatedTasks = $allTasks->skip(($page - 1) * $tasksPerPage)->take($tasksPerPage);
+            // حساب إجمالي أعضاء الفريق
+            $totalMembers = $allMembers->count();
             
-            // تجميع المهام حسب العضو للصفحة الحالية مع الحد الأقصى للمهام لكل عضو
+            // جلب الأعضاء في الصفحة الحالية فقط
+            $paginatedMembers = $allMembers->slice(($page - 1) * $perPage, $perPage);
+            
             $pageMembers = [];
-            $currentMemberTasks = [];
-            $currentMemberId = null;
-            $memberTasksData = [];
-            $totalTasksDisplayed = 0;
-
-            // ملء بيانات الأعضاء والإحصائيات
-            foreach ($allMembers as $member) {
-                $memberStats = $this->calculateMemberStats($team, $member);
-                $memberTasksData[$member->id] = [
-                    'member' => $member,
-                    'stats' => $memberStats
-                ];
-            }
-
-            foreach ($paginatedTasks as $task) {
-                if ($totalTasksDisplayed >= $tasksPerPage) {
-                    break;
-                }
-                
-                $memberId = $task->receiver_id;
-                
-                if ($currentMemberId !== $memberId) {
-                    // إنهاء العضو السابق إذا وُجد
-                    if ($currentMemberId !== null && !empty($currentMemberTasks)) {
-                        $pageMembers[] = [
-                            'member_info' => [
-                                'id' => $currentMemberId,
-                                'name' => $memberTasksData[$currentMemberId]['member']->name,
-                                'email' => $memberTasksData[$currentMemberId]['member']->email,
-                                'avatar_url' => $memberTasksData[$currentMemberId]['member']->avatar_url,
-                                'is_owner' => $currentMemberId == $team->owner_id
-                            ],
-                            'statistics' => $memberTasksData[$currentMemberId]['stats'],
-                            'tasks' => array_map(function($task) {
-                                return $this->formatTaskForDisplay($task);
-                            }, $currentMemberTasks),
-                            'displayed_tasks_count' => count($currentMemberTasks),
-                            'total_tasks_count' => $memberTasksData[$currentMemberId]['stats']['total_tasks']
-                        ];
+            
+            foreach ($paginatedMembers as $member) {
+                // فلترة مهام العضو
+                $memberTasks = $allTasks->filter(function ($task) use ($member, $taskUserRelations) {
+                    // المهام التي يكون العضو مستلمها
+                    if ($task->receiver_id == $member->id) {
+                        return true;
                     }
                     
-                    // بدء عضو جديد
-                    $currentMemberId = $memberId;
-                    $currentMemberTasks = [$task];
-                } else {
-                    if (count($currentMemberTasks) < 10) { // الحد الأقصى للمهام لكل عضو في الصفحة
-                        $currentMemberTasks[] = $task;
+                    // المهام التي يكون العضو مشاركاً فيها
+                    foreach ($taskUserRelations as $relation) {
+                        if ($relation->task_id == $task->id && $relation->user_id == $member->id) {
+                            return true;
+                        }
                     }
-                }
-                $totalTasksDisplayed++;
-            }
-            
-            // إضافة العضو الأخير
-            if ($currentMemberId !== null && !empty($currentMemberTasks)) {
+                    
+                    return false;
+                });
+                
                 $pageMembers[] = [
-                    'member_info' => [
-                        'id' => $currentMemberId,
-                        'name' => $memberTasksData[$currentMemberId]['member']->name,
-                        'email' => $memberTasksData[$currentMemberId]['member']->email,
-                        'avatar_url' => $memberTasksData[$currentMemberId]['member']->avatar_url,
-                        'is_owner' => $currentMemberId == $team->owner_id
+                    'id' => $member->id,
+                    'name' => $member->name,
+                    'email' => $member->email,
+                    'avatar_url' => $member->avatar_url,
+                    'stats' => [
+                        'completion_percentage_margin' => $this->calculateCompletionRate($memberTasks->values())
                     ],
-                    'statistics' => $memberTasksData[$currentMemberId]['stats'],
-                    'tasks' => array_map(function($task) {
-                        return $this->formatTaskForDisplay($task);
-                    }, $currentMemberTasks),
-                    'displayed_tasks_count' => count($currentMemberTasks),
-                    'total_tasks_count' => $memberTasksData[$currentMemberId]['stats']['total_tasks']
+                    'tasks' => $memberTasks->map(function ($task) {
+                        return [
+                            'id' => $task->id,
+                            'title' => $task->title,
+                            'status' => $task->status,
+                            'progress' => $task->progress,
+                            'stages_count' => $task->stages_count ?? 0
+                        ];
+                    })->values()
                 ];
             }
+            
+            // حساب إجمالي مهام الفريق
+            $totalTasks = $allTasks->count();
 
             return [
                 'members' => $pageMembers,
-                'total_tasks' => $totalTasks,
-                'total_members' => $allMembers->count(),
-                'current_page' => $page,
-                'tasks_per_page' => $tasksPerPage,
-                'last_page' => $totalPages,
-                'has_more_pages' => $page < $totalPages
+                'team_summary' => [
+                    'total_tasks' => $totalTasks,
+                    'completed_tasks' => $allTasks->where('status', 'completed')->count(),
+                    'pending_tasks' => $allTasks->where('status', 'pending')->count(),
+                    'in_progress_tasks' => $allTasks->where('status', 'in_progress')->count(),
+                    'completion_rate' => $totalTasks > 0 ? round(($allTasks->where('status', 'completed')->count() / $totalTasks) * 100, 1) : 0
+                ],
+                'pagination' => [
+                    'total' => $totalMembers,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'last_page' => ceil($totalMembers / $perPage)
+                ]
             ];
         });
 
-        if ($statsData['total_tasks'] == 0) {
+        if (empty($statsData['members'])) {
             return response()->json([
-                'message' => 'لا توجد مهام في فريقك حاليًا',
+                'message' => 'لا يوجد أعضاء في فريقك حاليًا',
                 'data' => [],
-                'meta' => [
-                    'total_tasks' => 0,
-                    'total_members' => $statsData['total_members'],
-                    'current_page' => $statsData['current_page'],
-                    'tasks_per_page' => $statsData['tasks_per_page'],
-                    'last_page' => $statsData['last_page'],
-                    'has_more_pages' => $statsData['has_more_pages']
-                ]
             ])->setMaxAge(300)->setPublic();
         }
 
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
-            'data' => $statsData['members'],
-            'meta' => [
-                'total_tasks' => $statsData['total_tasks'],
-                'total_members' => $statsData['total_members'],
-                'current_page' => $statsData['current_page'],
-                'tasks_per_page' => $statsData['tasks_per_page'],
-                'last_page' => $statsData['last_page'],
-                'has_more_pages' => $statsData['has_more_pages']
+            'data' => [
+                'members' => $statsData['members'],
+                'team_summary' => $statsData['team_summary'],
+                'pagination' => $statsData['pagination']
             ]
         ])->setMaxAge(300)->setPublic();
     }
