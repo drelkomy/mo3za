@@ -297,8 +297,8 @@ class TeamStatsController extends Controller
         $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
         
         $data = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
-            // جلب أعضاء الفريق مع التصفيح، بما في ذلك المالك
-            $memberIds = $team->members()->pluck('user_id')->push($team->owner_id)->unique();
+            // جلب أعضاء الفريق مع التصفيح
+            $memberIds = $team->members()->pluck('user_id');
             $totalMembers = $memberIds->count();
             
             $members = User::whereIn('id', $memberIds)
@@ -322,8 +322,13 @@ class TeamStatsController extends Controller
             $membersData = [];
             
             foreach ($members as $member) {
-                // فلترة مهام العضو
-                $memberTasks = $allTeamTasks->filter(function ($task) use ($member, $taskUserRelations) {
+                // فلترة مهام العضو (استبعاد مهام مالك الفريق)
+                $memberTasks = $allTeamTasks->filter(function ($task) use ($member, $taskUserRelations, $team) {
+                    // تجاهل المهام التي يستلمها مالك الفريق
+                    if ($task->receiver_id == $team->owner_id) {
+                        return false;
+                    }
+                    
                     // المهام التي يكون العضو مستلمها
                     if ($task->receiver_id == $member->id) {
                         return true;
@@ -381,11 +386,12 @@ class TeamStatsController extends Controller
                 ];
             }
             
-            // إحصائيات الفريق الإجمالية
-            $totalTeamTasks = $allTeamTasks->count();
-            $completedTeamTasks = $allTeamTasks->where('status', 'completed')->count();
-            $pendingTeamTasks = $allTeamTasks->where('status', 'pending')->count();
-            $inProgressTeamTasks = $allTeamTasks->where('status', 'in_progress')->count();
+            // إحصائيات الفريق الإجمالية (استبعاد مهام مالك الفريق)
+            $teamTasksOnly = $allTeamTasks->where('receiver_id', '!=', $team->owner_id);
+            $totalTeamTasks = $teamTasksOnly->count();
+            $completedTeamTasks = $teamTasksOnly->where('status', 'completed')->count();
+            $pendingTeamTasks = $teamTasksOnly->where('status', 'pending')->count();
+            $inProgressTeamTasks = $teamTasksOnly->where('status', 'in_progress')->count();
             
             return [
                 'members' => $membersData,
