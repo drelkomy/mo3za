@@ -98,11 +98,12 @@ class PaymentController extends Controller
     public function callback(Request $request)
     {
         try {
+            // تم تعليق مسح الكاش بناءً على طلب المستخدم
             // Clear cache for user's payment history on callback processing
-            $user = auth()->user();
-            if ($user) {
-                $this->clearPaymentHistoryCache($user->id);
-            }
+            // $user = auth()->user();
+            // if ($user) {
+            //     $this->clearPaymentHistoryCache($user->id);
+            // }
             // سجل بيانات الـ callback للتحقق
             Log::info('PayTabs callback received', [
                 'method' => $request->method(),
@@ -163,10 +164,18 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Invalid callback'], 400);
             }
 
-            // الحصول على معرف الطلب
+            // الحصول على معرف الطلب من الطلب أو من استجابة التحقق
             $cartId = $request->cart_id ?? $request->cartId ?? null;
+            if (!$cartId && isset($request->tran_ref)) {
+                $verification = $this->payTabsService->verifyPayment($request->tran_ref);
+                if ($verification['success'] && isset($verification['raw_response']['cart_id'])) {
+                    $cartId = $verification['raw_response']['cart_id'];
+                    Log::info('Cart ID extracted from verification response', ['cart_id' => $cartId]);
+                }
+            }
+            
             if (!$cartId) {
-                Log::error('Cart ID not found in callback data', $request->all());
+                Log::error('Cart ID not found in callback data or verification response', $request->all());
                 return response()->json(['message' => 'Cart ID not found'], 400);
             }
 
@@ -197,16 +206,16 @@ class PaymentController extends Controller
                     $payment->update([
                         'status' => 'completed',
                         'transaction_id' => $request->tran_ref,
-                        'amount' => $request->tran_amount ?? $payment->amount,
-                        'currency' => $request->tran_currency ?? $payment->currency,
+                        'amount' => $request->tran_amount ?? $verification['amount'] ?? $payment->amount,
+                        'currency' => $request->tran_currency ?? $verification['currency'] ?? $payment->currency,
                         'payment_method' => $request->tran_method ?? 'online'
                     ]);
 
                     // Log successful payment
                     Log::info('Payment completed', [
                         'order_id' => $cartId,
-                        'amount' => $request->tran_amount ?? $payment->amount,
-                        'currency' => $request->tran_currency ?? $payment->currency
+                        'amount' => $request->tran_amount ?? $verification['amount'] ?? $payment->amount,
+                        'currency' => $request->tran_currency ?? $verification['currency'] ?? $payment->currency
                     ]);
 
                     // Create subscription if payment is for a package
@@ -244,6 +253,30 @@ class PaymentController extends Controller
                     Log::error('Payment record not found for order', [
                         'cart_id' => $cartId
                     ]);
+                    // إنشاء سجل دفع جديد إذا لم يتم العثور على واحد موجود
+                    $payment = Payment::create([
+                        'order_id' => $cartId,
+                        'user_id' => $user ? $user->id : 0,
+                        'amount' => $request->tran_amount ?? $verification['amount'] ?? 0,
+                        'currency' => $request->tran_currency ?? $verification['currency'] ?? 'SAR',
+                        'status' => 'completed',
+                        'transaction_id' => $request->tran_ref,
+                        'payment_method' => $request->tran_method ?? 'online',
+                        'notes' => 'تم إنشاء السجل تلقائيًا من الكول باك لأنه لم يتم العثور على سجل موجود.'
+                    ]);
+                    Log::info('Created new payment record from callback', [
+                        'cart_id' => $cartId,
+                        'new_payment_id' => $payment->id
+                    ]);
+
+                    // إرجاع استجابة نجاح مع رابط إعادة التوجيه
+                    $activationUrl = route('paytabs.activate', ['transaction_ref' => $request->tran_ref]);
+                    $redirectHtml = '<html><head><meta http-equiv="refresh" content="0;url=' . $activationUrl . '"></head><body><script>window.location.href="' . $activationUrl . '";</script><p>جاري التوجيه...</p></body></html>';
+                    
+                    return response($redirectHtml, 200)
+                        ->header('Content-Type', 'text/html')
+                        ->header('X-Success', 'true')
+                        ->header('X-Redirect-Url', $activationUrl);
                 }
             }
 
@@ -305,11 +338,12 @@ class PaymentController extends Controller
     public function success(Request $request)
     {
         $transactionRef = $request->get('tranRef');
+        // تم تعليق مسح الكاش بناءً على طلب المستخدم
         // Clear cache for user's payment history on success
-        $user = auth()->user();
-        if ($user) {
-            $this->clearPaymentHistoryCache($user->id);
-        }
+        // $user = auth()->user();
+        // if ($user) {
+        //     $this->clearPaymentHistoryCache($user->id);
+        // }
         
         // تسجيل كل البيانات المستلمة للتشخيص
         Log::debug('Payment success page accessed', [
@@ -341,12 +375,12 @@ class PaymentController extends Controller
                             // التحقق من وجود اشتراك
                             if ($payment->subscription()->exists()) {
                                 // إعادة توجيه تلقائي إلى صفحة تنشيط الدفع ثم العودة للصفحة الرئيسية
-                                return redirect()->route('paytabs.activate', ['transaction_ref' => $transactionRef]);
+                                return redirect('/admin')->with('success', 'تم تأكيد الدفع بنجاح');
                             } else {
                                 // محاولة إنشاء الاشتراك إذا لم يكن موجوداً
                                 $subscription = $this->createSubscriptionFromPayment($payment);
                                 if ($subscription) {
-                                    return redirect()->route('paytabs.activate', ['transaction_ref' => $transactionRef]);
+                                    return redirect('/admin')->with('success', 'تم تأكيد الدفع بنجاح');
                                 }
                             }
                         } else {
@@ -366,9 +400,28 @@ class PaymentController extends Controller
                                     $payment->user->update(['is_active' => true]);
                                 }
                                 
-                                return redirect()->route('paytabs.activate', ['transaction_ref' => $transactionRef]);
+                                return redirect('/admin')->with('success', 'تم تأكيد الدفع بنجاح');
                             }
                         }
+                    } else {
+                        Log::error('Payment record not found, creating a new one', ['cart_id' => $cartId]);
+                        // إنشاء سجل دفع جديد إذا لم يتم العثور على واحد موجود
+                        $payment = Payment::create([
+                            'order_id' => $cartId,
+                            'user_id' => $user ? $user->id : 0,
+                            'amount' => $verification['amount'] ?? 0,
+                            'currency' => $verification['currency'] ?? 'SAR',
+                            'status' => 'completed',
+                            'transaction_id' => $transactionRef,
+                            'payment_method' => 'online',
+                            'notes' => 'تم إنشاء السجل تلقائيًا من صفحة النجاح لأنه لم يتم العثور على سجل موجود.'
+                        ]);
+                        Log::info('Created new payment record from success page', [
+                            'cart_id' => $cartId,
+                            'new_payment_id' => $payment->id
+                        ]);
+                        
+                        return redirect('/admin')->with('success', 'تم تأكيد الدفع بنجاح');
                     }
                 }
                 
@@ -394,11 +447,12 @@ class PaymentController extends Controller
     {
         // دعم كلٍ من مسار /activate/{transaction_ref} أو باراميتر ?transaction_ref=
         $transactionRef = $transaction_ref ?? $request->get('transaction_ref');
+        // تم تعليق مسح الكاش بناءً على طلب المستخدم
         // Clear cache for user's payment history on activation
-        $user = auth()->user();
-        if ($user) {
-            $this->clearPaymentHistoryCache($user->id);
-        }
+        // $user = auth()->user();
+        // if ($user) {
+        //     $this->clearPaymentHistoryCache($user->id);
+        // }
         
         // تسجيل الوصول إلى صفحة التنشيط
         Log::info('Payment activation page accessed', [
@@ -407,6 +461,10 @@ class PaymentController extends Controller
         ]);
         
         if (!$transactionRef) {
+            Log::error('Invalid payment reference provided', [
+                'transaction_ref' => $transactionRef,
+                'ip' => $request->ip()
+            ]);
             return redirect('/app')->with('error', 'مرجع الدفع غير صالح');
         }
         
@@ -430,6 +488,12 @@ class PaymentController extends Controller
             if (!$payment->subscription()->exists() && $payment->package_id) {
                 $this->createSubscriptionFromPayment($payment);
             }
+        } else {
+            Log::error('Payment record not found for activation', [
+                'transaction_ref' => $transactionRef,
+                'ip' => $request->ip()
+            ]);
+            return redirect('/app')->with('error', 'سجل الدفع غير موجود. يرجى الاتصال بالدعم للمساعدة.');
         }
         
         // لا حاجة لعرض مخصص، أعد توجيه المستخدم للوحة التحكم مع رسالة نجاح
@@ -446,11 +510,12 @@ class PaymentController extends Controller
     {
         $packageId = $request->input('package_id') ?? $request->route('package_id');
         $request->merge(['package_id' => $packageId]);
+        // تم تعليق مسح الكاش بناءً على طلب المستخدم
         // Clear cache for user's payment history on new payment
-        $user = auth()->user();
-        if ($user) {
-            $this->clearPaymentHistoryCache($user->id);
-        }
+        // $user = auth()->user();
+        // if ($user) {
+        //     $this->clearPaymentHistoryCache($user->id);
+        // }
 
         $package = Cache::remember("package_{$request->package_id}", 3600, fn() => Package::findOrFail($request->package_id));
         $user = auth()->user();
@@ -570,11 +635,12 @@ class PaymentController extends Controller
     public function processLocalPayment($orderId)
     {
         try {
+            // تم تعليق مسح الكاش بناءً على طلب المستخدم
             // Clear cache for user's payment history on local payment processing
-            $user = auth()->user();
-            if ($user) {
-                $this->clearPaymentHistoryCache($user->id);
-            }
+            // $user = auth()->user();
+            // if ($user) {
+            //     $this->clearPaymentHistoryCache($user->id);
+            // }
             // البحث عن الدفع بواسطة رقم الطلب
             $payment = Payment::where('order_id', $orderId)->first();
             
@@ -603,28 +669,7 @@ class PaymentController extends Controller
         }
     }
 
-    /**
-     * Clear payment history cache for a specific user
-     *
-     * @param int $userId
-     */
-    protected function clearPaymentHistoryCache($userId)
-    {
-        // Since cache keys vary by page and per_page, we can't clear a specific key.
-        // Instead, we can use tags if available, or clear with a pattern if supported.
-        // For simplicity, we'll use a forget with a prefix approach if tags aren't used.
-        // However, since Laravel doesn't support wildcard clearing without tags,
-        // and assuming tags aren't set up, we'll note that cache will expire in 5 minutes.
-        // Alternatively, we can loop through possible page numbers, but that's inefficient.
-        // For now, we'll clear a few common page keys as a workaround.
-        for ($page = 1; $page <= 5; $page++) {
-            foreach ([10, 20, 50] as $perPage) {
-                $cacheKey = "user_payments_all_{$userId}_page_{$page}_{$perPage}_v2";
-                Cache::forget($cacheKey);
-            }
-        }
-        Log::info('Payment history cache cleared for user', ['user_id' => $userId]);
-    }
+    // تم حذف دالة clearPaymentHistoryCache بناءً على طلب المستخدم
 
     /**
      * إنشاء اشتراك جديد من عملية دفع ناجحة

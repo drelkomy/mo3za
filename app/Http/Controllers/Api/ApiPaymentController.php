@@ -378,14 +378,31 @@ class ApiPaymentController extends Controller
         $payment = \App\Models\Payment::find($paymentId);
         
         if (!$payment) {
-            Log::error('Payment record not found', ['payment_id' => $paymentId]);
-            return response()->json([
-                'status' => 'error',
-                'message' => 'سجل الدفع غير موجود'
-            ], 404);
+            // البحث عن الدفع باستخدام order_id إذا لم يتم العثور عليه باستخدام paymentId
+            $payment = \App\Models\Payment::where('order_id', $paymentId)->first();
+            
+            if (!$payment) {
+                Log::error('Payment record not found even with order_id', ['payment_id_or_order_id' => $paymentId]);
+                // إنشاء سجل دفع جديد إذا لم يتم العثور على واحد
+                $payment = \App\Models\Payment::create([
+                    'order_id' => $paymentId,
+                    'user_id' => 0, // يمكن تحديثه لاحقًا إذا لزم الأمر
+                    'amount' => 0, // يمكن تحديثه لاحقًا
+                    'currency' => 'SAR',
+                    'status' => 'pending',
+                    'payment_method' => 'online',
+                    'notes' => 'تم إنشاء السجل تلقائيًا من رابط النجاح لأنه لم يتم العثور على سجل موجود.'
+                ]);
+                Log::info('Created new payment record from success URL', [
+                    'order_id' => $paymentId,
+                    'new_payment_id' => $payment->id
+                ]);
+            } else {
+                Log::info('Payment record found with order_id', ['payment_id' => $payment->id, 'order_id' => $paymentId, 'current_status' => $payment->status]);
+            }
+        } else {
+            Log::info('Payment record found', ['payment_id' => $paymentId, 'current_status' => $payment->status]);
         }
-        
-        Log::info('Payment record found', ['payment_id' => $paymentId, 'current_status' => $payment->status]);
         
         // تحديث حالة الدفع إذا لم تكن مكتملة بالفعل
         if ($payment->status !== 'completed') {
@@ -400,6 +417,9 @@ class ApiPaymentController extends Controller
             $subscription = $this->createSubscriptionFromPayment($payment);
             if ($subscription) {
                 Log::info('Subscription created', ['subscription_id' => $subscription->id, 'user_id' => $payment->user_id]);
+                // مسح الكاش المتعلق بالباقات وويدجات الاشتراك عند إنشاء اشتراك جديد لضمان ظهور الويدجات الأخرى في Filament
+                Cache::forget('packages');
+                Cache::forget('package_subscription_widget');
             } else {
                 Log::error('Failed to create subscription in success method', ['payment_id' => $payment->id]);
             }
@@ -437,6 +457,9 @@ class ApiPaymentController extends Controller
             $payment->update([
                 'status' => 'cancelled'
             ]);
+            // مسح الكاش المتعلق بالباقات عند إلغاء الدفع لضمان ظهور ويدجات الباقات في Filament
+            Cache::forget('packages');
+            Cache::forget('package_subscription_widget');
         }
         
         return response()->json([
