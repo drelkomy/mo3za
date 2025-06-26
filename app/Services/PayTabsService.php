@@ -54,8 +54,8 @@ class PayTabsService
                     'country' => 'SA',
                     'zip' => '11564'
                 ],
-                'callback_url' => route('paytabs.callback'),
-                'return' => route('paytabs.success')
+                'callback_url' => $data['callback_url'] ?? url('/api/payment/callback'),
+                'return' => $data['return_url_success'] ?? url('/api/payment/success/' . ($data['order_id'] ?? 'default'))
             ];
 
             $payload['shipping_details'] = $payload['customer_details'];

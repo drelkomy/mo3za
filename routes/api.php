@@ -25,6 +25,11 @@ Route::middleware('throttle:5,1')->group(function () {
     Route::post('/password/reset-link', [\App\Http\Controllers\Api\PasswordResetController::class, 'sendResetLink']);
 });
 
+// 🔓 مسارات الدفع المفتوحة بدون تسجيل دخول
+Route::match(['get', 'post'], '/payment/success/{paymentId}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'success']);
+Route::match(['get', 'post'], '/payment/cancel/{paymentId}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'cancel']);
+Route::match(['get', 'post'], '/payment/callback', [\App\Http\Controllers\Api\ApiPaymentController::class, 'callback']);
+
 // المسارات المحمية بالمصادقة - 60 طلبات في الدقيقة للمستخدمين
 Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // معلومات المستخدم الحالي - مع cache
@@ -102,9 +107,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     
 
     // Payment Callbacks - استقبال نتائج الدفع
-    Route::post('/payment/callback', [\App\Http\Controllers\Api\ApiPaymentController::class, 'callback']); // webhook من بوابة الدفع
-    Route::get('/payment/success/{subscription}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'success']); // نجح الدفع
-    Route::get('/payment/cancel/{subscription}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'cancel']); // إلغاء الدفع
+    Route::post('/payment/mobile-init', [\App\Http\Controllers\Api\SubscriptionController::class, 'createPaymentForMobile']); // إنشاء رابط دفع لتطبيق المحمول
 
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);
