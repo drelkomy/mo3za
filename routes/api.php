@@ -55,6 +55,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهام الفريق
     Route::get('/team/rewards', [TeamController::class, 'getTeamRewards'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق
+    Route::get('/team/rewards/{team}', [TeamController::class, 'teamRewards'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق حتى لو انتهى الاشتراك
     // إحصائيات الفريق
     Route::get('/team/member-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getMemberStats'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات أعضاء الفريق

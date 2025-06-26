@@ -11,6 +11,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
+use App\Models\Reward;
 
 class TaskController extends Controller
 {
@@ -246,6 +248,100 @@ class TaskController extends Controller
                 'current_page' => $tasksData['current_page'],
                 'per_page' => $tasksData['per_page'],
                 'last_page' => $tasksData['last_page']
+            ]
+        ])->setMaxAge(300)->setPublic();
+    }
+    
+    /**
+     * إضافة دالة للحصول على مكافآتي
+     */
+    public function myRewards(Request $request): JsonResponse
+    {
+        $userId = auth()->id();
+        $key = "my_rewards_{$userId}";
+        $maxAttempts = 60; // الحد الأقصى للمحاولات في الدقيقة
+        $decaySeconds = 60; // فترة التحلل بالثواني
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
+            ], 429);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+
+        $page = $request->input('page', 1);
+        $perPage = min($request->input('per_page', 10), 50);
+        $status = $request->input('status');
+        
+        $cacheKey = "my_rewards_{$userId}_page_{$page}_per_{$perPage}_status_{$status}";
+        
+        $rewardsData = Cache::remember($cacheKey, 300, function () use ($userId, $page, $perPage, $status) {
+            $query = Reward::where('receiver_id', $userId)
+                ->with(['task:id,title']);
+            
+            if ($status) {
+                $query->where('status', $status);
+            }
+            
+            $total = $query->count();
+            $totalAmount = $query->sum('amount');
+            $statusCounts = DB::table('rewards')
+                ->select([
+                    DB::raw('SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending'),
+                    DB::raw('SUM(CASE WHEN status = "received" THEN 1 ELSE 0 END) as received')
+                ])
+                ->where('receiver_id', $userId)
+                ->when($status, fn($q) => $q->where('status', $status))
+                ->first();
+            
+            $currentPage = $page;
+            $lastPage = ceil($total / $perPage);
+            
+            $rewards = $query->offset(($currentPage - 1) * $perPage)
+                ->limit($perPage)
+                ->orderBy('created_at', 'desc')
+                ->get();
+            
+            return [
+                'rewards' => $rewards,
+                'total' => $total,
+                'total_amount' => $totalAmount,
+                'status_counts' => [
+                    'pending' => $statusCounts->pending,
+                    'received' => $statusCounts->received
+                ],
+                'current_page' => $currentPage,
+                'per_page' => $perPage,
+                'last_page' => $lastPage
+            ];
+        });
+        
+        if ($rewardsData['total'] == 0) {
+            return response()->json([
+                'message' => 'لا توجد مكافآت مرتبطة بك حاليًا',
+                'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'total_amount' => 0,
+                    'status_counts' => [],
+                    'current_page' => $rewardsData['current_page'],
+                    'per_page' => $rewardsData['per_page'],
+                    'last_page' => $rewardsData['last_page']
+                ]
+            ])->setMaxAge(300)->setPublic();
+        }
+
+        return response()->json([
+            'message' => 'تم جلب مكافآتك بنجاح',
+            'data' => \App\Http\Resources\RewardResource::collection($rewardsData['rewards']),
+            'meta' => [
+                'total' => $rewardsData['total'],
+                'total_amount' => $rewardsData['total_amount'],
+                'status_counts' => $rewardsData['status_counts'],
+                'current_page' => $rewardsData['current_page'],
+                'per_page' => $rewardsData['per_page'],
+                'last_page' => $rewardsData['last_page']
             ]
         ])->setMaxAge(300)->setPublic();
     }

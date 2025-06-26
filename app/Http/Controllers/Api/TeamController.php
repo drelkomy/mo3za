@@ -265,7 +265,7 @@ class TeamController extends Controller
 
         return response()->json([
             'message' => 'تم جلب مهام الفريق بنجاح',
-            'data' => TeamTaskResource::collection($tasksData['tasks']),
+            'data' => TaskResource::collection($tasksData['tasks']),
             'meta' => [
                 'total' => $tasksData['total'],
                 'status_counts' => $tasksData['status_counts'],
@@ -289,6 +289,19 @@ class TeamController extends Controller
                 'data' => null
             ], 404);
         }
+        
+        $userId = auth()->id();
+        $key = "team_rewards_{$team->id}_{$userId}";
+        $maxAttempts = 60; // الحد الأقصى للمحاولات في الدقيقة
+        $decaySeconds = 60; // فترة التحلل بالثواني
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
+            ], 429);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
         
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
@@ -419,92 +432,123 @@ class TeamController extends Controller
                 'data' => null
             ], 403);
         }
+        // ملاحظة: في حالة انتهاء الاشتراك، يجب تحديث حالة المهام الحالية إلى "منتهي" 
+        // يمكن تنفيذ هذا المنطق في مكان آخر مثل SubscriptionService أو مراقب الاشتراكات
         
         try {
             // بدء معاملة قاعدة البيانات
             \Illuminate\Support\Facades\DB::beginTransaction();
             
-            // إنشاء المهمة
-            $task = Task::create([
-                'title' => $request->input('title'),
-                'description' => $request->input('description'),
-                'receiver_id' => $receiverId,
-                'creator_id' => auth()->id(),
-                'team_id' => $team->id,
-                'status' => 'pending',
-                'progress' => 0,
-                'priority' => $request->input('priority', 'normal'),
-                'due_date' => $request->input('due_date'),
-                'total_stages' => $request->input('total_stages', 3),
-                'reward_amount' => $request->input('reward_amount'),
-                'reward_type' => $request->input('reward_type', 'cash'),
-                'reward_description' => $request->input('reward_description'),
-                'is_multiple' => $request->input('is_multiple', false),
-                'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
-            ]);
-            
-            // تحديث عدد المهام في الاشتراك
-            $subscriptionService->incrementTasksCreated($user);
-            
-            // إنشاء مراحل المهمة
-            if ($request->has('stages')) {
-                $stages = $request->input('stages');
-                foreach ($stages as $index => $stageData) {
-                    TaskStage::create([
-                        'task_id' => $task->id,
-                        'title' => $stageData['title'],
-                        'description' => $stageData['description'] ?? null,
-                        'stage_number' => $index + 1,
-                        'status' => 'pending',
-                    ]);
-                }
-            } else {
-                // إنشاء مراحل افتراضية
-                $defaultStages = [
-                    ['title' => 'البداية', 'description' => 'مرحلة البدء في المهمة'],
-                    ['title' => 'التنفيذ', 'description' => 'مرحلة تنفيذ المهمة'],
-                    ['title' => 'الإنهاء', 'description' => 'مرحلة إنهاء المهمة']
-                ];
+            // إذا كانت المهمة متعددة، قم بإنشاء مهمة منفصلة لكل شخص
+            $receiverIds = [$receiverId];
+            if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
+                $selectedMembers = is_string($request->input('selected_members')) 
+                    ? json_decode($request->input('selected_members'), true) 
+                    : $request->input('selected_members');
                 
-                foreach ($defaultStages as $index => $stageData) {
-                    TaskStage::create([
-                        'task_id' => $task->id,
-                        'title' => $stageData['title'],
-                        'description' => $stageData['description'],
-                        'stage_number' => $index + 1,
-                        'status' => 'pending',
-                    ]);
+                if (is_array($selectedMembers)) {
+                    foreach ($selectedMembers as $memberId) {
+                        // تحقق من أن العضو موجود في الفريق ولم يتم إضافته بالفعل
+                        $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
+                        if ($isMember && !in_array($memberId, $receiverIds)) {
+                            $receiverIds[] = $memberId;
+                        }
+                    }
                 }
+            }
+
+            $tasks = [];
+            foreach ($receiverIds as $rid) {
+                // إنشاء المهمة مع تخزين حالة الاشتراك بناءً على التحقق المباشر دون الاعتماد على الكاش
+                $subscriptionStatus = $user->canAddTasks() ? 'active' : 'expired'; // تحديد حالة الاشتراك بناءً على التحقق المباشر
+                $task = Task::create([
+                    'title' => $request->input('title'),
+                    'description' => $request->input('description'),
+                    'receiver_id' => $rid,
+                    'creator_id' => auth()->id(),
+                    'team_id' => $team->id,
+                    'status' => 'pending',
+                    'progress' => 0,
+                    'priority' => $request->input('priority', 'normal'),
+                    'due_date' => $request->input('due_date'),
+                    'total_stages' => $request->input('total_stages', 3),
+                    'reward_amount' => $request->input('reward_amount'),
+                    'reward_type' => $request->input('reward_type', 'cash'),
+                    'reward_description' => $request->input('reward_description'),
+                    'is_multiple' => $request->input('is_multiple', false),
+                    'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
+                    'subscription_status' => $subscriptionStatus, // تخزين حالة الاشتراك مع المهمة بناءً على التحقق المباشر
+                ]);
+                
+                // تحديث عدد المهام في الاشتراك
+                $subscriptionService->incrementTasksCreated($user);
+                
+                // إنشاء مراحل المهمة تلقائيًا وفق عدد المراحل والمدة الزمنية
+                $totalStages = $request->input('total_stages', 3);
+                $dueDate = $request->input('due_date') ? \Carbon\Carbon::parse($request->input('due_date')) : \Carbon\Carbon::now()->addDays(7);
+                $startDate = \Carbon\Carbon::now(); // تاريخ البداية هو تاريخ اليوم تلقائيًا
+                $durationDays = $startDate->diffInDays($dueDate);
+                $stageDuration = $durationDays > 0 ? floor($durationDays / $totalStages) : 0;
+                $remainingDays = $durationDays > 0 ? $durationDays % $totalStages : 0;
+
+                if ($request->has('stages')) {
+                    $stages = $request->input('stages');
+                    foreach ($stages as $index => $stageData) {
+                        $stageStartDate = $startDate->copy()->addDays($index * $stageDuration);
+                        $stageEndDate = $startDate->copy()->addDays(($index + 1) * $stageDuration - 1);
+                        if ($index == $totalStages - 1) {
+                            $stageEndDate = $dueDate->copy();
+                        }
+                        if ($remainingDays > 0 && $index < $remainingDays) {
+                            $stageEndDate->addDay();
+                        }
+                        TaskStage::create([
+                            'task_id' => $task->id,
+                            'title' => $stageData['title'],
+                            'description' => $stageData['description'] ?? null,
+                            'stage_number' => $index + 1,
+                            'status' => 'pending',
+                            'start_date' => $stageStartDate,
+                            'end_date' => $stageEndDate,
+                        ]);
+                    }
+                } else {
+                    // إنشاء مراحل تلقائية بناءً على المدة الزمنية
+                    for ($i = 1; $i <= $totalStages; $i++) {
+                        $stageStartDate = $startDate->copy()->addDays(($i - 1) * $stageDuration);
+                        $stageEndDate = $startDate->copy()->addDays($i * $stageDuration - 1);
+                        if ($i == $totalStages) {
+                            $stageEndDate = $dueDate->copy(); // ضمان أن تاريخ نهاية آخر مرحلة هو تاريخ انتهاء المهمة
+                        } elseif ($remainingDays > 0 && $i <= $remainingDays) {
+                            $stageEndDate->addDay(); // توزيع الأيام المتبقية على المراحل الأولى
+                        }
+                        TaskStage::create([
+                            'task_id' => $task->id,
+                            'title' => "المرحلة $i",
+                            'description' => "المرحلة $i من المهمة",
+                            'stage_number' => $i,
+                            'status' => 'pending',
+                            'start_date' => $stageStartDate,
+                            'end_date' => $stageEndDate,
+                        ]);
+                    }
+                }
+                
+                
+                $this->clearTaskCache($task->id, $team->id, $rid);
+                
+                // تحميل العلاقات
+                $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages']);
+                
+                $tasks[] = $task;
             }
             
             // إتمام المعاملة
             \Illuminate\Support\Facades\DB::commit();
             
-                // مسح الكاش المتعلق بالمهمة
-            $this->clearTaskCache($task->id, $team->id, $receiverId);
-            
-            // إذا كانت المهمة متعددة، قم بإضافة الأعضاء المحددين
-            if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
-                $selectedMembers = $request->input('selected_members');
-                foreach ($selectedMembers as $memberId) {
-                    // تحقق من أن العضو موجود في الفريق
-                    $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
-                    if ($isMember) {
-                        $task->members()->attach($memberId, [
-                            'is_primary' => ($memberId == $receiverId),
-                            'status' => 'pending',
-                            'completion_percentage' => 0
-                        ]);
-                    }
-                }
-            }
-            
-            // تحميل العلاقات
-            $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages', 'members:id,name,email']);
-            
             return response()->json([
-                'message' => 'تم إنشاء المهمة بنجاح',
-                'data' => new TaskResource($task)
+                'message' => 'تم إنشاء المهام بنجاح لجميع المستلمين',
+                'data' => TaskResource::collection($tasks)
             ], 201);
             
         } catch (\Exception $e) {
@@ -593,176 +637,173 @@ class TeamController extends Controller
     }
     
     /**
-     * تنسيق المهمة للعرض
+     * إحصائيات مهام أعضاء الفريق
      */
-    private function formatTaskForDisplay($task): array
+    public function teamMembersTaskStats(Request $request, Team $team): JsonResponse
     {
-        $cleanDescription = null;
-        if ($task->description) {
-            $cleanDescription = strip_tags($task->description);
-            $cleanDescription = strlen($cleanDescription) > 100 ? substr($cleanDescription, 0, 100) . '...' : $cleanDescription;
+        // التحقق من الصلاحيات
+        if (!$team->isMember(auth()->id())) {
+            return response()->json(['message' => 'غير مصرح لك بالوصول إلى إحصائيات هذا الفريق'], 403);
         }
         
-        return [
-            'id' => $task->id,
-            'title' => $task->title,
-            'description' => $cleanDescription,
-            'status' => $task->status,
-            'progress' => $task->progress,
-            'priority' => $task->priority,
-            'due_date' => $task->due_date,
-            'created_at' => $task->created_at->format('Y-m-d H:i:s'),
-            'creator' => $task->creator ? [
-                'id' => $task->creator->id,
-                'name' => $task->creator->name,
-            ] : null,
-            'stages_count' => $task->stages_count,
-            'completed_stages' => $task->stages ? $task->stages->where('status', 'completed')->count() : 0,
-        ];
-    }
-
-    /**
-     * عرض إحصائيات مهام أعضاء الفريق
-     */
-    public function getMembersTaskStats(Request $request): JsonResponse
-    {
-        $team = $this->getUserTeam();
-        if (!$team) {
-            return response()->json([
-                'message' => 'لا تملك فريقاً أو لست عضوًا في أي فريق.',
-                'data' => null
-            ], 404);
-        }
-
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
+        $status = $request->input('status');
         
-        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}";
-
-        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage) {
-            // جلب جميع أعضاء الفريق مع تضمين مالك الفريق
-            $allMembers = collect();
+        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        
+        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
+            // جلب أعضاء الفريق مع إحصائيات المهام
+            $query = $team->members()
+                ->select('users.id', 'users.name', 'users.email')
+                ->withCount([
+                    'receivedTasks as total_tasks',
+                    'receivedTasks as pending_tasks' => function ($q) {
+                        $q->where('status', 'pending');
+                    },
+                    'receivedTasks as in_progress_tasks' => function ($q) {
+                        $q->where('status', 'in_progress');
+                    },
+                    'receivedTasks as completed_tasks' => function ($q) {
+                        $q->where('status', 'completed');
+                    }
+                ]);
             
-            // إضافة مالك الفريق أولاً
-            $owner = User::select('id', 'name', 'email', 'avatar_url')
-                ->where('id', $team->owner_id)
-                ->first();
-            if ($owner) {
-                $allMembers->push($owner);
+            if ($status) {
+                $query->withCount([
+                    'receivedTasks as filtered_tasks' => function ($q) use ($status) {
+                        $q->where('status', $status);
+                    }
+                ]);
             }
             
-            // إضافة باقي الأعضاء
-            $members = $team->members()
-                ->select('users.id', 'users.name', 'users.email', 'users.avatar_url')
+            $total = $team->members()->count();
+            $currentPage = $page;
+            $lastPage = ceil($total / $perPage);
+            
+            $members = $query->offset(($currentPage - 1) * $perPage)
+                ->limit($perPage)
                 ->get();
             
-            // التأكد من عدم تكرار المالك إذا كان عضواً أيضاً
-            $members->each(function($member) use ($allMembers, $owner) {
-                if (!$owner || $member->id !== $owner->id) {
-                    $allMembers->push($member);
-                }
-            });
-
-            // جلب جميع المهام المتعلقة بالفريق
-            $allTasks = Task::where('team_id', $team->id)
-                ->with([
-                    'receiver:id,name,email,avatar_url',
-                    'creator:id,name,email',
-                    'stages' => function($q) {
-                        $q->select('id', 'task_id', 'title', 'status', 'stage_number')
-                          ->orderBy('stage_number');
-                    }
-                ])
-                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'created_at', 'due_date', 'priority', 'team_id')
-                ->withCount('stages')
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            // جلب العلاقة بين المهام والأعضاء
-            $taskUserRelations = DB::table('task_user')
-                ->whereIn('task_id', $allTasks->pluck('id')->toArray())
-                ->get();
-            
-            // حساب إجمالي أعضاء الفريق
-            $totalMembers = $allMembers->count();
-            
-            // جلب الأعضاء في الصفحة الحالية فقط
-            $paginatedMembers = $allMembers->slice(($page - 1) * $perPage, $perPage);
-            
-            $pageMembers = [];
-            
-            foreach ($paginatedMembers as $member) {
-                // فلترة مهام العضو
-                $memberTasks = $allTasks->filter(function ($task) use ($member, $taskUserRelations) {
-                    // المهام التي يكون العضو مستلمها
-                    if ($task->receiver_id == $member->id) {
-                        return true;
-                    }
-                    
-                    // المهام التي يكون العضو مشاركاً فيها
-                    foreach ($taskUserRelations as $relation) {
-                        if ($relation->task_id == $task->id && $relation->user_id == $member->id) {
-                            return true;
-                        }
-                    }
-                    
-                    return false;
-                });
-                
-                $pageMembers[] = [
+            return [
+                'members' => $members,
+                'total' => $total,
+                'current_page' => $currentPage,
+                'per_page' => $perPage,
+                'last_page' => $lastPage
+            ];
+        });
+        
+        return response()->json([
+            'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
+            'data' => $statsData['members']->map(function ($member) use ($status) {
+                return [
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url,
-                    'stats' => [
-                        'completion_percentage_margin' => $this->calculateCompletionRate($memberTasks->values())
-                    ],
-                    'tasks' => $memberTasks->map(function ($task) {
-                        return [
-                            'id' => $task->id,
-                            'title' => $task->title,
-                            'status' => $task->status,
-                            'progress' => $task->progress,
-                            'stages_count' => $task->stages_count ?? 0
-                        ];
-                    })->values()
+                    'total_tasks' => $member->total_tasks,
+                    'pending_tasks' => $member->pending_tasks,
+                    'in_progress_tasks' => $member->in_progress_tasks,
+                    'completed_tasks' => $member->completed_tasks,
+                    'filtered_tasks' => $status ? $member->filtered_tasks : null
                 ];
+            }),
+            'meta' => [
+                'total' => $statsData['total'],
+                'current_page' => $statsData['current_page'],
+                'per_page' => $statsData['per_page'],
+                'last_page' => $statsData['last_page']
+            ]
+        ])->setMaxAge(300)->setPublic();
+    }
+    
+    /**
+     * عرض مكافآت الفريق حتى لو انتهى الاشتراك
+     */
+    public function teamRewards(Request $request, Team $team): JsonResponse
+    {
+        // التحقق من المصادقة
+        if (!auth()->check()) {
+            return response()->json(['message' => 'غير مصادق عليك'], 401);
+        }
+        
+        // التحقق من الصلاحيات
+        if (!$team->isMember(auth()->id())) {
+            return response()->json(['message' => 'غير مصرح لك بالوصول إلى مكافآت هذا الفريق'], 403);
+        }
+        
+        $page = $request->input('page', 1);
+        $perPage = min($request->input('per_page', 10), 50);
+        $status = $request->input('status');
+        
+        $cacheKey = "team_rewards_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        
+        $rewardsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
+            $query = Reward::whereIn('receiver_id', $team->members()->pluck('user_id'))
+                ->with(['task:id,title', 'receiver:id,name']);
+            
+            if ($status) {
+                $query->where('status', $status);
             }
             
-            // حساب إجمالي مهام الفريق
-            $totalTasks = $allTasks->count();
-
+            $total = $query->count();
+            $totalAmount = $query->sum('amount');
+            $statusCounts = DB::table('rewards')
+                ->select([
+                    DB::raw('SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending'),
+                    DB::raw('SUM(CASE WHEN status = "received" THEN 1 ELSE 0 END) as received')
+                ])
+                ->whereIn('receiver_id', $team->members()->pluck('user_id'))
+                ->when($status, fn($q) => $q->where('status', $status))
+                ->first();
+            
+            $currentPage = $page;
+            $lastPage = ceil($total / $perPage);
+            
+            $rewards = $query->offset(($currentPage - 1) * $perPage)
+                ->limit($perPage)
+                ->orderBy('created_at', 'desc')
+                ->get();
+            
             return [
-                'members' => $pageMembers,
-                'team_summary' => [
-                    'total_tasks' => $totalTasks,
-                    'completed_tasks' => $allTasks->where('status', 'completed')->count(),
-                    'pending_tasks' => $allTasks->where('status', 'pending')->count(),
-                    'in_progress_tasks' => $allTasks->where('status', 'in_progress')->count(),
-                    'completion_rate' => $totalTasks > 0 ? round(($allTasks->where('status', 'completed')->count() / $totalTasks) * 100, 1) : 0
+                'rewards' => $rewards,
+                'total' => $total,
+                'total_amount' => $totalAmount,
+                'status_counts' => [
+                    'pending' => $statusCounts->pending,
+                    'received' => $statusCounts->received
                 ],
-                'pagination' => [
-                    'total' => $totalMembers,
-                    'per_page' => $perPage,
-                    'current_page' => $page,
-                    'last_page' => ceil($totalMembers / $perPage)
-                ]
+                'current_page' => $currentPage,
+                'per_page' => $perPage,
+                'last_page' => $lastPage
             ];
         });
-
-        if (empty($statsData['members'])) {
+        
+        if ($rewardsData['total'] == 0) {
             return response()->json([
-                'message' => 'لا يوجد أعضاء في فريقك حاليًا',
+                'message' => 'لا توجد مكافآت مرتبطة بأعضاء الفريق حاليًا',
                 'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'total_amount' => 0,
+                    'status_counts' => [],
+                    'current_page' => $rewardsData['current_page'],
+                    'per_page' => $rewardsData['per_page'],
+                    'last_page' => $rewardsData['last_page']
+                ]
             ])->setMaxAge(300)->setPublic();
         }
 
         return response()->json([
-            'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
-            'data' => [
-                'members' => $statsData['members'],
-                'team_summary' => $statsData['team_summary'],
-                'pagination' => $statsData['pagination']
+            'message' => 'تم جلب مكافآت الفريق بنجاح',
+            'data' => \App\Http\Resources\RewardResource::collection($rewardsData['rewards']),
+            'meta' => [
+                'total' => $rewardsData['total'],
+                'total_amount' => $rewardsData['total_amount'],
+                'status_counts' => $rewardsData['status_counts'],
+                'current_page' => $rewardsData['current_page'],
+                'per_page' => $rewardsData['per_page'],
+                'last_page' => $rewardsData['last_page']
             ]
         ])->setMaxAge(300)->setPublic();
     }

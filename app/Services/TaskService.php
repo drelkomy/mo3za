@@ -4,96 +4,213 @@ namespace App\Services;
 
 use App\Models\Task;
 use App\Models\TaskStage;
+use App\Models\Reward;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TaskService
 {
+    /**
+     * إنشاء مراحل المهمة
+     */
     public function createTaskStages(Task $task): void
     {
-        $startDate = \Carbon\Carbon::parse($task->start_date);
-        $endDate = \Carbon\Carbon::parse($task->due_date);
+        // التحقق من صحة البيانات
+        if ($task->total_stages <= 0 || $task->duration_days <= 0) {
+            throw new \InvalidArgumentException('عدد المراحل ومدة المهمة يجب أن تكون أكبر من صفر');
+        }
+
+        $startDate = Carbon::parse($task->start_date);
+        $endDate = Carbon::parse($task->due_date);
         $daysPerStage = $task->duration_days / $task->total_stages;
         
-        for ($i = 1; $i <= $task->total_stages; $i++) {
-            $stageStartDate = $startDate->copy()->addDays(floor(($i - 1) * $daysPerStage));
-            
-            // ضبط المرحلة الأخيرة لتنتهي في التاريخ المحدد
-            if ($i === $task->total_stages) {
-                $stageEndDate = $endDate;
-            } else {
-                $stageEndDate = $startDate->copy()->addDays(ceil($i * $daysPerStage) - 1);
+        // استخدام transaction لضمان تماسك البيانات
+        DB::transaction(function () use ($task, $startDate, $endDate, $daysPerStage) {
+            for ($i = 1; $i <= $task->total_stages; $i++) {
+                $stageStartDate = $startDate->copy()->addDays(floor(($i - 1) * $daysPerStage));
+                
+                // ضبط المرحلة الأخيرة لتنتهي في التاريخ المحدد
+                if ($i === $task->total_stages) {
+                    $stageEndDate = $endDate;
+                } else {
+                    $stageEndDate = $startDate->copy()->addDays(ceil($i * $daysPerStage) - 1);
+                }
+                
+                TaskStage::create([
+                    'task_id' => $task->id,
+                    'stage_number' => $i,
+                    'title' => "المرحلة {$i}",
+                    'description' => "وصف المرحلة {$i} من المهمة: {$task->title}",
+                    'status' => 'pending',
+                    'start_date' => $stageStartDate,
+                    'due_date' => $stageEndDate,
+                ]);
             }
-            
-            TaskStage::create([
-                'task_id' => $task->id,
-                'stage_number' => $i,
-                'title' => "المرحلة {$i}",
-                'description' => "وصف المرحلة {$i} من المهمة: {$task->title}",
-                'status' => 'pending',
-                'start_date' => $stageStartDate,
-                'due_date' => $stageEndDate,
-            ]);
-        }
+        });
+
+        Log::info("تم إنشاء {$task->total_stages} مراحل للمهمة: {$task->title}");
     }
 
+    /**
+     * تحديث تقدم المهمة بناءً على حالة المراحل
+     */
     public function updateTaskProgress(Task $task): void
     {
-        $stages = $task->stages;
+        $stages = $task->stages()->get(); // استخدم lazy loading للأداء الأفضل
         $completed = $stages->where('status', 'completed')->count();
         $total = $stages->count();
-        $progress = $total > 0 ? ($completed / $total) * 100 : 0;
         
-        $task->fill([
-            'progress' => round($progress),
-            'status' => match (true) {
-                $progress === 100.0 => 'completed',
-                $progress > 0 => 'in_progress',
-                default => 'pending',
-            },
-            'completed_at' => $progress === 100.0 ? now() : null,
-        ])->save();
+        if ($total === 0) {
+            Log::warning("المهمة {$task->id} لا تحتوي على مراحل");
+            return;
+        }
+        
+        $progress = ($completed / $total) * 100;
+        
+        $task->update([
+            'progress' => round($progress, 2), // حفظ بدقة عشرية
+            'status' => $this->determineTaskStatus($progress),
+        ]);
     }
 
-    public function completeStage(TaskStage $stage, string $proofNotes = null): void
+    /**
+     * تحديد حالة المهمة بناءً على التقدم
+     */
+    private function determineTaskStatus(float $progress): string
     {
-        if ($stage->status !== 'completed') {
+        return match (true) {
+            $progress >= 100.0 => 'completed',
+            $progress > 0 => 'in_progress',
+            default => 'pending',
+        };
+    }
+
+    /**
+     * إكمال مرحلة مع إضافة ملاحظات الإثبات
+     */
+    public function completeStage(TaskStage $stage, ?string $proofNotes = null): void
+    {
+        if ($stage->status === 'completed') {
+            Log::info("المرحلة {$stage->id} مكتملة مسبقاً");
+            return;
+        }
+
+        DB::transaction(function () use ($stage, $proofNotes) {
             $stage->update([
                 'status' => 'completed',
-                'completed_at' => now(),
                 'proof_notes' => $proofNotes,
+                // يمكن إضافة completed_at عند إضافة العمود لقاعدة البيانات
+                // 'completed_at' => now(),
             ]);
 
             $this->updateTaskProgress($stage->task);
-        }
+            
+            Log::info("تم إكمال المرحلة {$stage->stage_number} للمهمة {$stage->task_id}");
+        });
     }
 
+    /**
+     * إكمال المهمة بواسطة القائد
+     */
     public function completeTaskByLeader(Task $task, bool $distributeReward = true): void
     {
-        $task->update([
-            'status' => 'completed',
-            'progress' => 100,
-            'completed_at' => now(),
-        ]);
+        if ($task->status === 'completed') {
+            Log::info("المهمة {$task->id} مكتملة مسبقاً");
+            return;
+        }
 
-        if ($distributeReward && $task->reward_amount > 0 && $task->assigned_to) {
-            $this->distributeReward($task);
+        DB::transaction(function () use ($task, $distributeReward) {
+            $task->update([
+                'status' => 'completed',
+                'progress' => 100,
+                // 'completed_at' => now(), // سيتم تفعيله عند إضافة العمود
+            ]);
+
+            if ($distributeReward && $this->canDistributeReward($task)) {
+                $this->distributeReward($task);
+            }
+            
+            Log::info("تم إكمال المهمة {$task->id} بواسطة القائد");
+        });
+    }
+
+    /**
+     * التحقق من إمكانية توزيع المكافأة
+     */
+    private function canDistributeReward(Task $task): bool
+    {
+        return $task->reward_amount > 0 
+            && $task->assigned_to 
+            && !$task->reward_distributed;
+    }
+
+    /**
+     * توزيع المكافأة على المستخدم المكلف
+     */
+    private function distributeReward(Task $task): void
+    {
+        try {
+            Reward::create([
+                'task_id' => $task->id,
+                'user_id' => $task->assigned_to,
+                'amount' => $task->reward_amount,
+                'status' => 'received',
+                'distributed_at' => now(),
+                'received_at' => now(),
+                'distributed_by' => $task->creator_id,
+            ]);
+
+            $task->update([
+                'reward_distributed' => true,
+                'reward_distributed_at' => now(),
+            ]);
+
+            Log::info("تم توزيع مكافأة بقيمة {$task->reward_amount} للمستخدم {$task->assigned_to}");
+            
+        } catch (\Exception $e) {
+            Log::error("فشل في توزيع المكافأة للمهمة {$task->id}: " . $e->getMessage());
+            throw $e;
         }
     }
 
-    private function distributeReward(Task $task): void
+    /**
+     * الحصول على إحصائيات المهمة
+     */
+    public function getTaskStatistics(Task $task): array
     {
-        \App\Models\Reward::create([
-            'task_id' => $task->id,
-            'user_id' => $task->assigned_to,
-            'amount' => $task->reward_amount,
-            'status' => 'received',
-            'distributed_at' => now(),
-            'received_at' => now(),
-            'distributed_by' => $task->creator_id,
-        ]);
+        $stages = $task->stages()->get();
+        
+        return [
+            'total_stages' => $stages->count(),
+            'completed_stages' => $stages->where('status', 'completed')->count(),
+            'pending_stages' => $stages->where('status', 'pending')->count(),
+            'in_progress_stages' => $stages->where('status', 'in_progress')->count(),
+            'progress_percentage' => $task->progress,
+            'days_remaining' => now()->diffInDays($task->due_date, false),
+            'is_overdue' => now()->isAfter($task->due_date) && $task->status !== 'completed',
+        ];
+    }
 
-        $task->update([
-            'reward_distributed' => true,
-            'reward_distributed_at' => now(),
-        ]);
+    /**
+     * إعادة تعيين مرحلة (إلغاء الإكمال)
+     */
+    public function resetStage(TaskStage $stage): void
+    {
+        if ($stage->status !== 'completed') {
+            return;
+        }
+
+        DB::transaction(function () use ($stage) {
+            $stage->update([
+                'status' => 'pending',
+                'proof_notes' => null,
+                // 'completed_at' => null,
+            ]);
+
+            $this->updateTaskProgress($stage->task);
+            
+            Log::info("تم إعادة تعيين المرحلة {$stage->stage_number} للمهمة {$stage->task_id}");
+        });
     }
 }
