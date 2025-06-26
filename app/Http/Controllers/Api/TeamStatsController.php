@@ -57,12 +57,15 @@ class TeamStatsController extends Controller
             Cache::forget("my_tasks_" . $memberId);
         }
         
-        // مسح كاش إحصائيات الفريق
+        // مسح كاش إحصائيات الفريق لجميع الحالات الممكنة
+        $statuses = ['', 'pending', 'in_progress', 'completed'];
+        $perPages = [10, 20, 30, 40, 50];
         for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_");
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_in_progress");
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10_status_completed");
+            foreach ($statuses as $status) {
+                foreach ($perPages as $perPage) {
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_{$perPage}_status_{$status}");
+                }
+            }
         }
     }
     /**

@@ -78,9 +78,15 @@ class TaskController extends Controller
             Cache::forget("member_task_stats_{$teamId}_{$receiverId}_page_{$i}");
         }
         
-        // مسح كاش إحصائيات الفريق
+        // مسح كاش إحصائيات الفريق لجميع الحالات الممكنة
+        $statuses = ['', 'pending', 'in_progress', 'completed'];
+        $perPages = [10, 20, 30, 40, 50];
         for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_10");
+            foreach ($statuses as $status) {
+                foreach ($perPages as $perPage) {
+                    Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_{$perPage}_status_{$status}");
+                }
+            }
         }
     }
     

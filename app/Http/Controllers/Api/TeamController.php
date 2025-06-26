@@ -45,9 +45,15 @@ class TeamController extends Controller
             Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_tasks_per_page_10");
         }
         
-        // مسح كاش المكافآت
+        // مسح كاش المكافآت لجميع الحالات الممكنة
+        $statuses = ['', 'pending', 'delivered', 'cancelled'];
+        $perPages = [10, 20, 30, 40, 50];
         for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_rewards_{$team->id}_page_{$i}_per_10_status_");
+            foreach ($statuses as $status) {
+                foreach ($perPages as $perPage) {
+                    Cache::forget("team_rewards_{$team->id}_page_{$i}_per_{$perPage}_status_{$status}");
+                }
+            }
         }
         
         // مسح كاش إحصائيات الأعضاء
