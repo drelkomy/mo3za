@@ -5,20 +5,27 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SubscribePackageRequest;
 use App\Http\Resources\PackageResource;
+use App\Http\Resources\Api\SubscriptionCreateResource;
 use App\Models\Package;
 use App\Models\Subscription;
+use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\DB;
 
 class PackageController extends Controller
 {
+    public function __construct(
+        private SubscriptionService $subscriptionService
+    ) {}
+
     public function index(): JsonResponse
     {
-        $packages = Cache::remember('paid_packages', 600, function () {
+        $packages = Cache::remember('paid_packages_v2', 900, function () {
             return Package::where('is_active', true)
                 ->where('is_trial', false)
-                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial'])
+                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
                 ->orderBy('price')
                 ->get();
         });
@@ -26,137 +33,139 @@ class PackageController extends Controller
         return response()->json([
             'message' => 'تم جلب الباقات بنجاح',
             'data' => PackageResource::collection($packages)
-        ])->setMaxAge(600)->setPublic();
+        ])->setMaxAge(900)->setPublic();
     }
     
     public function trial(): JsonResponse
     {
-        // فحص إذا استخدم المستخدم الباقة التجريبية من قبل
-        $hasUsedTrial = auth()->user()->subscriptions()
-            ->whereHas('package', function($q) {
-                $q->where('is_trial', true);
-            })->exists();
+        $userId = auth()->id();
+        $cacheKey = "trial_status_{$userId}";
+        
+        $data = Cache::remember($cacheKey, 300, function () use ($userId) {
+            $hasUsedTrial = DB::table('subscriptions')
+                ->join('packages', 'subscriptions.package_id', '=', 'packages.id')
+                ->where('subscriptions.user_id', $userId)
+                ->where('packages.is_trial', true)
+                ->exists();
+                
+            $trialPackage = null;
+            if (!$hasUsedTrial) {
+                $trialPackage = Package::where('is_active', true)
+                    ->where('is_trial', true)
+                    ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
+                    ->first();
+            }
             
-        if ($hasUsedTrial) {
+            return [
+                'has_used_trial' => $hasUsedTrial,
+                'trial_package' => $trialPackage
+            ];
+        });
+        
+        if ($data['has_used_trial']) {
             return response()->json([
-                'message' => 'لقد استخدمت الباقة التجريبية من قبل - لا يمكن تجديدها',
+                'message' => 'لقد استخدمت الباقة التجريبية من قبل',
                 'trial_package' => null,
                 'can_renew' => false
             ], 422);
         }
         
-        $trialPackage = Package::where('is_active', true)
-            ->where('is_trial', true)
-            ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task', 'is_trial'])
-            ->first();
-            
         return response()->json([
             'message' => 'الباقة التجريبية متاحة',
-            'trial_package' => $trialPackage ? new PackageResource($trialPackage) : null
-        ]);
+            'trial_package' => $data['trial_package'] ? new PackageResource($data['trial_package']) : null
+        ])->setMaxAge(300)->setPublic();
     }
     
     public function subscribe(SubscribePackageRequest $request): JsonResponse
     {
-        $key = 'subscribe:' . auth()->id();
-        if (RateLimiter::tooManyAttempts($key, 3)) {
-            return response()->json(['message' => 'عدد كبير من محاولات الاشتراك. يرجى المحاولة لاحقاً.'], 429);
-        }
+        $userId = auth()->id();
+        $key = "subscribe:{$userId}";
         
-        $package = Package::find($request->input('package_id'));
-        
-        // منع تجديد الباقة التجريبية
-        if ($package->is_trial) {
-            $hasUsedTrial = auth()->user()->subscriptions()
-                ->whereHas('package', function($q) {
-                    $q->where('is_trial', true);
-                })->exists();
-                
-            if ($hasUsedTrial) {
-                return response()->json([
-                    'message' => 'لا يمكن الاشتراك في الباقة التجريبية أكثر من مرة واحدة'
-                ], 422);
-            }
-        }
-        
-        // فحص وجود اشتراك نشط أو معلق
-        $existingSubscription = auth()->user()->subscriptions()
-            ->whereIn('status', ['active', 'pending'])
-            ->first();
-            
-        if ($existingSubscription) {
+        // تحديد عدد الطلبات - 2 محاولات كل 5 دقائق
+        if (RateLimiter::tooManyAttempts($key, 2)) {
             return response()->json([
-                'message' => 'لديك اشتراك بالفعل',
-                'current_subscription' => [
-                    'package_name' => $existingSubscription->package->name,
-                    'status' => $existingSubscription->status
-                ]
+                'message' => 'عدد كبير من محاولات الاشتراك. يرجى المحاولة بعد 5 دقائق.',
+                'error' => 'rate_limit_exceeded'
+            ], 429);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // استخدام Service لتحسين الأداء
+            $subscription = $this->subscriptionService->createSubscription(
+                $userId,
+                $request->validated()['package_id']
+            );
+            
+            DB::commit();
+            
+            // تسجيل المحاولة
+            RateLimiter::hit($key, 300);
+            
+            // تنظيف الكاش
+            $this->clearUserCache($userId);
+            
+            // تنظيف كاش الفريق إذا كان المستخدم لديه فريق
+            $team = \App\Models\Team::where('owner_id', $userId)->first();
+            if ($team) {
+                $this->clearTeamCache($team->id);
+            }
+            
+            return response()->json([
+                'message' => $subscription->package->is_trial 
+                    ? 'تم تفعيل الباقة التجريبية بنجاح' 
+                    : 'تم إنشاء طلب الاشتراك بنجاح',
+                'data' => new SubscriptionCreateResource($subscription)
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            // تسجيل الخطأ
+            \Illuminate\Support\Facades\Log::error('Subscription error: ' . $e->getMessage(), [
+                'user_id' => $userId,
+                'package_id' => $request->validated()['package_id'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'حدث خطأ أثناء الاشتراك: ' . $e->getMessage(),
+                'error' => 'subscription_error'
             ], 422);
         }
-        
-        // إنشاء الاشتراك
-        $subscription = Subscription::create([
-            'user_id' => auth()->id(),
-            'package_id' => $package->id,
-            'start_date' => now(),
-            'status' => $package->is_trial ? 'active' : 'pending',
-            'price_paid' => $package->price,
-        ]);
-        
-        // تنظيف cache
-        Cache::forget('user_subscription_' . auth()->id());
-        
-        RateLimiter::hit($key, 300);
-        
-        $response = [
-            'message' => $package->is_trial ? 'تم تفعيل الباقة التجريبية بنجاح' : 'تم إنشاء طلب الاشتراك بنجاح',
-            'subscription_id' => $subscription->id,
-            'status' => $subscription->status
-        ];
-        
-        // إضافة رابط الدفع للباقات المدفوعة
-        if (!$package->is_trial && $package->price > 0) {
-            $paymentUrl = $this->generatePaymentUrl($subscription, $package);
-            $response['payment_url'] = $paymentUrl;
-            $response['payment_instructions'] = 'يرجى إكمال عملية الدفع لتفعيل الاشتراك';
-        }
-        
-        return response()->json($response, 201);
     }
     
-    private function generatePaymentUrl($subscription, $package): string
+    private function clearUserCache(int $userId): void
     {
-        $paymentData = [
-            'profile_id' => config('paytabs.profile_id'),
-            'tran_type' => 'sale',
-            'tran_class' => 'ecom',
-            'cart_id' => 'subscription_' . $subscription->id,
-            'cart_description' => 'اشتراك في باقة: ' . $package->name,
-            'cart_currency' => 'SAR',
-            'cart_amount' => $package->price,
-            'callback' => url('/api/payment/callback'),
-            'return' => url('/api/payment/success/' . $subscription->id),
-            'customer_details' => [
-                'name' => auth()->user()->name,
-                'email' => auth()->user()->email,
-                'phone' => auth()->user()->phone ?? '966500000000',
-                'street1' => 'N/A',
-                'city' => 'Riyadh',
-                'state' => 'Riyadh',
-                'country' => 'SA',
-                'zip' => '12345'
-            ]
+        $cacheKeys = [
+            "user_subscription_{$userId}",
+            "trial_status_{$userId}",
+            "current_subscription_{$userId}",
+            "user_{$userId}_has_active_subscription"
         ];
         
-        $response = \Illuminate\Support\Facades\Http::withHeaders([
-            'Authorization' => config('paytabs.server_key'),
-            'Content-Type' => 'application/json'
-        ])->post('https://secure.paytabs.sa/payment/request', $paymentData);
-        
-        if ($response->successful()) {
-            return $response->json('redirect_url');
+        foreach ($cacheKeys as $key) {
+            Cache::forget($key);
         }
-        
-        return url('/payment/error');
+    }
+    
+    /**
+     * مسح كاش الفريق
+     */
+    private function clearTeamCache(int $teamId): void
+    {
+        // مسح كاش المهام
+        for ($i = 1; $i <= 5; $i++) {
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_completed");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_pending");
+            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_in_progress");
+            
+            // مسح كاش الإحصائيات
+            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_10");
+            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_tasks_per_page_10");
+        }
     }
 }

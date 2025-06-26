@@ -383,7 +383,7 @@ class TeamController extends Controller
     /**
      * إنشاء مهمة جديدة للفريق
      */
-    public function createTask(CreateTaskRequest $request): JsonResponse
+    public function createTask(CreateTaskRequest $request, \App\Services\SubscriptionService $subscriptionService): JsonResponse
     {
         // التحقق من وجود فريق للمستخدم
         $team = $this->getUserTeam();
@@ -405,82 +405,118 @@ class TeamController extends Controller
             ], 400);
         }
         
-        // إنشاء المهمة
-        $task = Task::create([
-            'title' => $request->input('title'),
-            'description' => $request->input('description'),
-            'receiver_id' => $receiverId,
-            'creator_id' => auth()->id(),
-            'team_id' => $team->id,
-            'status' => 'pending',
-            'progress' => 0,
-            'priority' => $request->input('priority', 'normal'),
-            'due_date' => $request->input('due_date'),
-            'total_stages' => $request->input('total_stages', 3),
-            'reward_amount' => $request->input('reward_amount'),
-            'reward_type' => $request->input('reward_type', 'cash'),
-            'reward_description' => $request->input('reward_description'),
-            'is_multiple' => $request->input('is_multiple', false),
-            'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
-        ]);
-        
-        // إنشاء مراحل المهمة
-        if ($request->has('stages')) {
-            $stages = $request->input('stages');
-            foreach ($stages as $index => $stageData) {
-                TaskStage::create([
-                    'task_id' => $task->id,
-                    'title' => $stageData['title'],
-                    'description' => $stageData['description'] ?? null,
-                    'stage_number' => $index + 1,
-                    'status' => 'pending',
-                ]);
-            }
-        } else {
-            // إنشاء مراحل افتراضية
-            $defaultStages = [
-                ['title' => 'البداية', 'description' => 'مرحلة البدء في المهمة'],
-                ['title' => 'التنفيذ', 'description' => 'مرحلة تنفيذ المهمة'],
-                ['title' => 'الإنهاء', 'description' => 'مرحلة إنهاء المهمة']
-            ];
-            
-            foreach ($defaultStages as $index => $stageData) {
-                TaskStage::create([
-                    'task_id' => $task->id,
-                    'title' => $stageData['title'],
-                    'description' => $stageData['description'],
-                    'stage_number' => $index + 1,
-                    'status' => 'pending',
-                ]);
-            }
+        // التحقق من إمكانية إنشاء مهمة جديدة (الاشتراك)
+        $user = auth()->user();
+        if (!$user->canAddTasks()) {
+            return response()->json([
+                'message' => 'لا يمكن إنشاء مهام جديدة. يرجى تجديد الاشتراك.',
+                'data' => null
+            ], 403);
         }
         
-        // مسح الكاش المتعلق بالمهمة
-        $this->clearTaskCache($task->id, $team->id, $receiverId);
-        
-        // إذا كانت المهمة متعددة، قم بإضافة الأعضاء المحددين
-        if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
-            $selectedMembers = $request->input('selected_members');
-            foreach ($selectedMembers as $memberId) {
-                // تحقق من أن العضو موجود في الفريق
-                $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
-                if ($isMember) {
-                    $task->members()->attach($memberId, [
-                        'is_primary' => ($memberId == $receiverId),
+        try {
+            // بدء معاملة قاعدة البيانات
+            \Illuminate\Support\Facades\DB::beginTransaction();
+            
+            // إنشاء المهمة
+            $task = Task::create([
+                'title' => $request->input('title'),
+                'description' => $request->input('description'),
+                'receiver_id' => $receiverId,
+                'creator_id' => auth()->id(),
+                'team_id' => $team->id,
+                'status' => 'pending',
+                'progress' => 0,
+                'priority' => $request->input('priority', 'normal'),
+                'due_date' => $request->input('due_date'),
+                'total_stages' => $request->input('total_stages', 3),
+                'reward_amount' => $request->input('reward_amount'),
+                'reward_type' => $request->input('reward_type', 'cash'),
+                'reward_description' => $request->input('reward_description'),
+                'is_multiple' => $request->input('is_multiple', false),
+                'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
+            ]);
+            
+            // تحديث عدد المهام في الاشتراك
+            $subscriptionService->incrementTasksCreated($user);
+            
+            // إنشاء مراحل المهمة
+            if ($request->has('stages')) {
+                $stages = $request->input('stages');
+                foreach ($stages as $index => $stageData) {
+                    TaskStage::create([
+                        'task_id' => $task->id,
+                        'title' => $stageData['title'],
+                        'description' => $stageData['description'] ?? null,
+                        'stage_number' => $index + 1,
                         'status' => 'pending',
-                        'completion_percentage' => 0
+                    ]);
+                }
+            } else {
+                // إنشاء مراحل افتراضية
+                $defaultStages = [
+                    ['title' => 'البداية', 'description' => 'مرحلة البدء في المهمة'],
+                    ['title' => 'التنفيذ', 'description' => 'مرحلة تنفيذ المهمة'],
+                    ['title' => 'الإنهاء', 'description' => 'مرحلة إنهاء المهمة']
+                ];
+                
+                foreach ($defaultStages as $index => $stageData) {
+                    TaskStage::create([
+                        'task_id' => $task->id,
+                        'title' => $stageData['title'],
+                        'description' => $stageData['description'],
+                        'stage_number' => $index + 1,
+                        'status' => 'pending',
                     ]);
                 }
             }
+            
+            // إتمام المعاملة
+            \Illuminate\Support\Facades\DB::commit();
+            
+                // مسح الكاش المتعلق بالمهمة
+            $this->clearTaskCache($task->id, $team->id, $receiverId);
+            
+            // إذا كانت المهمة متعددة، قم بإضافة الأعضاء المحددين
+            if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
+                $selectedMembers = $request->input('selected_members');
+                foreach ($selectedMembers as $memberId) {
+                    // تحقق من أن العضو موجود في الفريق
+                    $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
+                    if ($isMember) {
+                        $task->members()->attach($memberId, [
+                            'is_primary' => ($memberId == $receiverId),
+                            'status' => 'pending',
+                            'completion_percentage' => 0
+                        ]);
+                    }
+                }
+            }
+            
+            // تحميل العلاقات
+            $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages', 'members:id,name,email']);
+            
+            return response()->json([
+                'message' => 'تم إنشاء المهمة بنجاح',
+                'data' => new TaskResource($task)
+            ], 201);
+            
+        } catch (\Exception $e) {
+            // التراجع عن المعاملة في حالة حدوث خطأ
+            \Illuminate\Support\Facades\DB::rollBack();
+            
+            // تسجيل الخطأ
+            \Illuminate\Support\Facades\Log::error('Error creating task: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'team_id' => $team->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'message' => 'حدث خطأ أثناء إنشاء المهمة',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        // تحميل العلاقات
-        $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages', 'members:id,name,email']);
-        
-        return response()->json([
-            'message' => 'تم إنشاء المهمة بنجاح',
-            'data' => new TaskResource($task)
-        ], 201);
     }
 
     /**
