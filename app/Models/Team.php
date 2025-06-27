@@ -7,14 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Team extends Model
+class Team extends Model implements HasMedia
 {
-    use HasFactory;
+    use HasFactory, InteractsWithMedia;
 
-    protected $fillable = ['owner_id', 'name', 'description', 'is_active'];
+    protected $fillable = [
+        'name', 'description', 'owner_id', 'is_active', 'created_at', 'updated_at'
+    ];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -22,25 +25,10 @@ class Team extends Model
         'updated_at' => 'datetime',
     ];
 
-    
-    // إضافة نطاقات للاستعلامات المتكررة
-    public function scopeActive(Builder $query): Builder
+    protected static function booted()
     {
-        return $query->where('is_active', true);
-    }
-
-    public function scopeInactive(Builder $query): Builder
-    {
-        return $query->where('is_active', false);
-    }
-
-    public function scopeForUser(Builder $query, int $userId): Builder
-    {
-        return $query->where(function($q) use ($userId) {
-            $q->where('owner_id', $userId)
-              ->orWhereHas('members', function($subQ) use ($userId) {
-                  $subQ->where('user_id', $userId);
-              });
+        static::addGlobalScope('active', function ($builder) {
+            $builder->where('is_active', true);
         });
     }
 
@@ -56,14 +44,14 @@ class Team extends Model
             ->withTimestamps();
     }
 
-    public function invitations(): HasMany
-    {
-        return $this->hasMany(Invitation::class);
-    }
-
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class);
     }
 
     public function joinRequests(): HasMany
@@ -71,46 +59,18 @@ class Team extends Model
         return $this->hasMany(JoinRequest::class);
     }
 
-    // دوال مساعدة لتحسين الأداء
     public function getMembersCount(): int
     {
-        // استخدام التخزين المؤقت لتحسين الأداء
-        $cacheKey = "team_{$this->id}_members_count";
-        
-        return Cache::remember($cacheKey, now()->addMinutes(5), function() {
+        return Cache::remember("team_{$this->id}_members_count", now()->addMinutes(5), function () {
             return $this->members()->count();
         });
     }
 
-    public function hasMember(int $userId): bool
+    public function refreshMembersCountCache(): void
     {
-        // استخدام exists بدلاً من count لتحسين الأداء
-        return $this->members()->where('user_id', $userId)->exists();
-    }
-
-    public function addMember(int $userId, string $role = 'member'): bool
-    {
-        if (!$this->hasMember($userId)) {
-            $this->members()->attach($userId, ['role' => $role]);
-            // حذف التخزين المؤقت عند تغيير الأعضاء
-            Cache::forget("team_{$this->id}_members_count");
-            // حذف التخزين المؤقت لفريق المالك
-            Cache::forget("my_team_{$this->owner_id}");
-            return true;
-        }
-        return false;
-    }
-
-    public function removeMember(int $userId): bool
-    {
-        $result = $this->members()->detach($userId);
-        // حذف التخزين المؤقت عند تغيير الأعضاء
         Cache::forget("team_{$this->id}_members_count");
-        return $result > 0;
-    }
-
-    public function getPendingInvitationsCount(): int
-    {
-        return $this->invitations()->where('status', 'pending')->count();
+        Cache::remember("team_{$this->id}_members_count", now()->addMinutes(5), function () {
+            return $this->members()->count();
+        });
     }
 }

@@ -47,12 +47,26 @@ class TeamRewardResource extends JsonResource
     
     private function getAvatarUrl($user)
     {
-        if (!$user) return null;
-        
-        if ($user->avatar_url) {
-            return \Illuminate\Support\Facades\Storage::url($user->avatar_url);
+        if (!$user || empty($user->avatar_url)) {
+            return null;
         }
         
-        return null;
+        if (str_starts_with($user->avatar_url, 'http')) {
+            $url = $user->avatar_url;
+            if (str_contains($url, 'storage/https://')) {
+                $url = str_replace('https://www.moezez.com/storage/https://www.moezez.com/storage/', 'https://www.moezez.com/storage/', $url);
+            }
+            return $url;
+        }
+        
+        if (str_starts_with($user->avatar_url, 'avatars/')) {
+            return 'https://www.moezez.com/storage/' . $user->avatar_url;
+        }
+        
+        if (str_starts_with($user->avatar_url, 'storage/')) {
+            return 'https://www.moezez.com/' . $user->avatar_url;
+        }
+        
+        return 'https://www.moezez.com/storage/' . $user->avatar_url;
     }
 }

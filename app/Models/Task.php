@@ -37,7 +37,14 @@ class Task extends Model implements HasMedia
         'selected_members' => 'array',
     ];
 
-    
+    /**
+     * The relationships that can be loaded on demand.
+     *
+     * @var array
+     */
+    // protected $with = ['creator', 'receiver', 'team', 'media'];
+    // Removed eager loading to avoid unnecessary data loading. Use with() or loadMissing() when needed.
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'creator_id');
@@ -60,7 +67,8 @@ class Task extends Model implements HasMedia
 
     public function stages(): HasMany
     {
-        return $this->hasMany(TaskStage::class)->orderBy('stage_number');
+        return $this->hasMany(TaskStage::class);
+        // Order by stage_number should be handled at usage point with stages()->orderBy('stage_number')->get();
     }
 
     public function updateProgress(): void
@@ -69,6 +77,9 @@ class Task extends Model implements HasMedia
             $completedStages = $this->stages()->where('status', 'completed')->count();
             $progress = ($completedStages / $this->total_stages) * 100;
             
+            $originalProgress = $this->progress;
+            $originalStatus = $this->status;
+
             $this->progress = round($progress);
 
             if ($this->progress == 100) {
@@ -84,10 +95,14 @@ class Task extends Model implements HasMedia
         } else {
             // If there are no stages, we can consider it 100% complete by default
             // or handle as per business logic. For now, let's set to 0.
+            $originalProgress = $this->progress;
+            $originalStatus = $this->status;
             $this->progress = 0;
         }
 
-        $this->save();
+        if ($this->isDirty(['progress', 'status'])) {
+            $this->save();
+        }
     }
 
     public function rewards(): HasMany

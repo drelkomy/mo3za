@@ -11,15 +11,32 @@ class MyTeamResource extends JsonResource
 {
     private function getAvatarUrl($user)
     {
-        if (!$user) return null;
-        
-        // التحقق من وجود صورة للمستخدم
-        if ($user->avatar_url) {
-            // استخدام نفس طريقة البروفايل بالضبط
-            return Storage::url($user->avatar_url);
+        if (!$user || empty($user->avatar_url)) {
+            return null;
         }
         
-        return asset('default-avatar.png');
+        // إذا كان الرابط يحتوي على http بالفعل
+        if (str_starts_with($user->avatar_url, 'http')) {
+            // إزالة التكرار إذا وجد
+            $url = $user->avatar_url;
+            if (str_contains($url, 'storage/https://')) {
+                $url = str_replace('https://www.moezez.com/storage/https://www.moezez.com/storage/', 'https://www.moezez.com/storage/', $url);
+            }
+            return $url;
+        }
+        
+        // إذا كان يبدأ بـ avatars/
+        if (str_starts_with($user->avatar_url, 'avatars/')) {
+            return 'https://www.moezez.com/storage/' . $user->avatar_url;
+        }
+        
+        // إذا كان يحتوي على storage/
+        if (str_starts_with($user->avatar_url, 'storage/')) {
+            return 'https://www.moezez.com/' . $user->avatar_url;
+        }
+        
+        // الحالة الافتراضية
+        return 'https://www.moezez.com/storage/' . $user->avatar_url;
     }
     
     public function toArray($request)

@@ -8,4 +8,6 @@ use Filament\Resources\Pages\ListRecords;
 class ListMyRewards extends ListRecords
 {
     protected static string $resource = MyRewardResource::class;
+    
+
 }

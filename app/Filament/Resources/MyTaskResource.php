@@ -45,7 +45,9 @@ class MyTaskResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        return static::getModel()::where('receiver_id', auth()->id())->where('status', 'pending')->count();
+        return cache()->remember("user_" . auth()->id() . "_pending_tasks_count", now()->addMinutes(5), function () {
+            return static::getModel()::where('receiver_id', auth()->id())->where('status', 'pending')->count();
+        });
     }
 
     public static function getEloquentQuery(): Builder

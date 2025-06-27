@@ -19,7 +19,16 @@ class MyRewardResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->check() && !auth()->user()?->hasRole('admin');
+        $user = auth()->user();
+        if (!$user) return false;
+        if ($user->hasRole('admin')) return false;
+        
+        // استخدام التخزين المؤقت لتقليل الاستعلامات المتكررة
+        $subscription = cache()->remember("user_{$user->id}_active_subscription", now()->addMinutes(10), function () use ($user) {
+            return $user->activeSubscription;
+        });
+        
+        return $subscription && $subscription->status === 'active';
     }
     
     public static function canCreate(): bool
@@ -44,22 +53,49 @@ class MyRewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('user_id', auth()->id());
+        return parent::getEloquentQuery()
+            ->where('receiver_id', auth()->id())
+            ->orderBy('created_at', 'desc');
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('amount')->label('المبلغ')->money('SAR'),
-                Tables\Columns\TextColumn::make('reason')->label('السبب'),
-                Tables\Columns\TextColumn::make('awardedBy.name')->label('منح بواسطة'),
-                Tables\Columns\TextColumn::make('created_at')->label('تاريخ المنح')->dateTime(),
+                Tables\Columns\TextColumn::make('amount')
+                    ->label('المبلغ')
+                    ->money('SAR')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('notes')
+                    ->label('الملاحظات')
+                    ->limit(50),
+                Tables\Columns\TextColumn::make('giver.name')
+                    ->label('منح بواسطة')
+                    ->searchable(),
+                Tables\Columns\BadgeColumn::make('status')
+                    ->label('الحالة')
+                    ->colors([
+                        'warning' => 'pending',
+                        'success' => 'completed',
+                        'danger' => 'rejected',
+                    ])
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'pending' => 'في الانتظار',
+                        'completed' => 'مكتمل',
+                        'rejected' => 'مرفوض',
+                        default => $state,
+                    }),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('تاريخ المنح')
+                    ->dateTime()
+                    ->sortable(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ViewAction::make(),
             ])
-            ->paginationPageOptions([5])
+            ->paginated()
+            ->paginationPageOptions([5, 10, 25, 50])
             ->defaultPaginationPageOption(5);
     }
 

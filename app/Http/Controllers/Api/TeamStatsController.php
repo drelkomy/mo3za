@@ -135,7 +135,7 @@ class TeamStatsController extends Controller
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : null,
+                    'avatar_url' => $this->getAvatarUrl($member),
                     'total_tasks' => $totalTasks,
                     'completed_tasks' => $completedTasks,
                     'pending_tasks' => $pendingTasks,
@@ -377,7 +377,7 @@ class TeamStatsController extends Controller
                     'id' => $member->id,
                     'name' => $member->name,
                     'email' => $member->email,
-                    'avatar_url' => $member->avatar_url ? \Illuminate\Support\Facades\Storage::url($member->avatar_url) : null,
+                    'avatar_url' => $this->getAvatarUrl($member),
                     'total_tasks' => $totalTasks,
                     'completed_tasks' => $completedTasks,
                     'pending_tasks' => $pendingTasks,
@@ -422,5 +422,33 @@ class TeamStatsController extends Controller
                 'pagination' => $data['pagination']
             ]
         ])->setMaxAge(300)->setPublic();
+    }
+    
+    /**
+     * الحصول على رابط الصورة الشخصية
+     */
+    private function getAvatarUrl($user)
+    {
+        if (!$user || empty($user->avatar_url)) {
+            return null;
+        }
+        
+        if (str_starts_with($user->avatar_url, 'http')) {
+            $url = $user->avatar_url;
+            if (str_contains($url, 'storage/https://')) {
+                $url = str_replace('https://www.moezez.com/storage/https://www.moezez.com/storage/', 'https://www.moezez.com/storage/', $url);
+            }
+            return $url;
+        }
+        
+        if (str_starts_with($user->avatar_url, 'avatars/')) {
+            return 'https://www.moezez.com/storage/' . $user->avatar_url;
+        }
+        
+        if (str_starts_with($user->avatar_url, 'storage/')) {
+            return 'https://www.moezez.com/' . $user->avatar_url;
+        }
+        
+        return 'https://www.moezez.com/storage/' . $user->avatar_url;
     }
 }

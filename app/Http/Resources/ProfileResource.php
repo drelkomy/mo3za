@@ -19,7 +19,7 @@ class ProfileResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
-            'avatar_url' => $this->avatar_url ? \Illuminate\Support\Facades\Storage::url($this->avatar_url) : null,
+            'avatar_url' => $this->getAvatarUrl(),
             'user_type' => $this->user_type,
             'is_active' => $this->is_active,
             'gender' => $this->gender,
@@ -51,5 +51,38 @@ class ProfileResource extends JsonResource
                 ];
             }),
         ];
+    }
+    
+    /**
+     * الحصول على رابط الصورة الشخصية
+     */
+    private function getAvatarUrl(): ?string
+    {
+        if (empty($this->avatar_url)) {
+            return null;
+        }
+        
+        // إذا كان الرابط يحتوي على http بالفعل، تنظيفه من التكرار
+        if (str_starts_with($this->avatar_url, 'http')) {
+            // إزالة التكرار إذا وجد
+            $url = $this->avatar_url;
+            if (str_contains($url, 'storage/https://')) {
+                $url = str_replace('https://www.moezez.com/storage/https://www.moezez.com/storage/', 'https://www.moezez.com/storage/', $url);
+            }
+            return $url;
+        }
+        
+        // إذا كان يبدأ بـ avatars/ مباشرة
+        if (str_starts_with($this->avatar_url, 'avatars/')) {
+            return 'https://www.moezez.com/storage/' . $this->avatar_url;
+        }
+        
+        // إذا كان يحتوي على storage/ بالفعل
+        if (str_starts_with($this->avatar_url, 'storage/')) {
+            return 'https://www.moezez.com/' . $this->avatar_url;
+        }
+        
+        // الحالة الافتراضية
+        return 'https://www.moezez.com/storage/' . $this->avatar_url;
     }
 }

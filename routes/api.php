@@ -47,6 +47,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         ->middleware('throttle:30,1'); // عرض فريقي - 30 طلب في الدقيقة
     Route::post('/team/update-name', [TeamController::class, 'updateName']); // تعديل اسم الفريق
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
+    Route::get('/team/members', [TeamController::class, 'getTeamMembers'])
+        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض بيانات الفريق مع الأعضاء
     
     // Task Management - إدارة المهام
     Route::post('/team/create-task', [TeamController::class, 'createTask'])

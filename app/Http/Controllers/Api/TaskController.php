@@ -110,7 +110,9 @@ class TaskController extends Controller
         ]);
         
         // مسح الكاش المتعلق بالمهمة
-        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        if ($task->team_id) {
+            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        }
         
         return response()->json([
             'message' => 'تم تحديث حالة المهمة بنجاح',
@@ -138,7 +140,9 @@ class TaskController extends Controller
         $task->updateProgress();
         
         // مسح الكاش المتعلق بالمهمة
-        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        if ($task->team_id) {
+            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        }
         
         return response()->json([
             'message' => 'تم إكمال المرحلة بنجاح',
@@ -161,12 +165,13 @@ class TaskController extends Controller
         
         $task->update([
             'status' => 'completed',
-            'progress' => 100,
-            'completed_at' => now()
+            'progress' => 100
         ]);
         
         // مسح الكاش المتعلق بالمهمة
-        $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        if ($task->team_id) {
+            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+        }
         
         return response()->json([
             'message' => 'تم إغلاق المهمة بنجاح',
@@ -259,8 +264,8 @@ class TaskController extends Controller
     {
         $userId = auth()->id();
         $key = "my_rewards_{$userId}";
-        $maxAttempts = 60; // الحد الأقصى للمحاولات في الدقيقة
-        $decaySeconds = 60; // فترة التحلل بالثواني
+        $maxAttempts = 60;
+        $decaySeconds = 60;
 
         if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
             return response()->json([
@@ -271,12 +276,11 @@ class TaskController extends Controller
         RateLimiter::hit($key, $decaySeconds);
 
         $page = $request->input('page', 1);
-        $perPage = min($request->input('per_page', 10), 50);
+        $perPage = min($request->input('per_page', 5), 50);
         $status = $request->input('status');
         
-        $cacheKey = "my_rewards_{$userId}_page_{$page}_per_{$perPage}_status_{$status}";
-        
-        $rewardsData = Cache::remember($cacheKey, 300, function () use ($userId, $page, $perPage, $status) {
+        $cacheKey = "my_rewards_data_{$userId}_page_{$page}_per_{$perPage}_status_{$status}";
+        $rewardsData = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($userId, $page, $perPage, $status) {
             $query = Reward::where('receiver_id', $userId)
                 ->with(['task:id,title']);
             
@@ -329,7 +333,7 @@ class TaskController extends Controller
                     'per_page' => $rewardsData['per_page'],
                     'last_page' => $rewardsData['last_page']
                 ]
-            ])->setMaxAge(300)->setPublic();
+            ]);
         }
 
         return response()->json([
@@ -343,6 +347,6 @@ class TaskController extends Controller
                 'per_page' => $rewardsData['per_page'],
                 'last_page' => $rewardsData['last_page']
             ]
-        ])->setMaxAge(300)->setPublic();
+        ]);
     }
 }

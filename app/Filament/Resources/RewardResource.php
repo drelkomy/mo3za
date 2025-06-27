@@ -25,7 +25,11 @@ class RewardResource extends Resource
         if (!$user) return false;
         if ($user->hasRole('admin')) return true;
         
-        $subscription = $user->activeSubscription;
+        // استخدام التخزين المؤقت لتقليل الاستعلامات المتكررة
+        $subscription = cache()->remember("user_{$user->id}_active_subscription", now()->addMinutes(10), function () use ($user) {
+            return $user->activeSubscription;
+        });
+        
         return $subscription && $subscription->status === 'active';
     }
     
@@ -56,10 +60,11 @@ class RewardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with('task');
+        $query = parent::getEloquentQuery()
+            ->with(['task', 'receiver', 'giver'])
+            ->orderBy('created_at', 'desc');
         
         if (!auth()->user()?->hasRole('admin')) {
-            // عرض المكافآت التي منحها الشخص فقط
             $query->where('giver_id', auth()->id());
         }
         
@@ -132,7 +137,8 @@ class RewardResource extends Resource
                     ->modalDescription('هل تم استلام هذه المكافأة؟'),
             ])
             ->defaultSort('created_at', 'desc')
-            ->paginationPageOptions([5])
+            ->paginated()
+            ->paginationPageOptions([5, 10, 25, 50])
             ->defaultPaginationPageOption(5);
     }
 

@@ -11,6 +11,7 @@ use App\Http\Resources\TeamDetailResource;
 use App\Http\Resources\TaskResource;
 use App\Http\Resources\RewardResource;
 use App\Http\Resources\TeamRewardResource;
+use App\Http\Resources\TeamMemberResource;
 use App\Models\Team;
 use App\Models\Task;
 use App\Models\TaskStage;
@@ -619,8 +620,11 @@ class TeamController extends Controller
      */
     private function calculateMemberStats(Team $team, $member): array
     {
-        // جلب جميع المهام للعضو (بدون فلترة team_id)
-        $memberTasks = Task::where('receiver_id', $member->id)->get();
+        // جلب جميع المهام للعضو (بدون فلترة team_id) باستخدام التخزين المؤقت
+        $cacheKey = "member_tasks_stats_{$member->id}_{$team->id}";
+        $memberTasks = cache()->remember($cacheKey, now()->addMinutes(5), function () use ($member) {
+            return Task::where('receiver_id', $member->id)->get();
+        });
         
         $totalTasks = $memberTasks->count();
         $completedTasks = $memberTasks->where('status', 'completed')->count();
@@ -978,6 +982,49 @@ class TeamController extends Controller
                 'per_page' => $tasksData['per_page'],
                 'last_page' => $tasksData['last_page']
             ]
+        ])->setMaxAge(300)->setPublic();
+    }
+    
+    /**
+     * عرض بيانات الفريق مع الأعضاء (الرقم، الاسم، الصورة فقط)
+     */
+    public function getTeamMembers(Request $request): JsonResponse
+    {
+        $team = $this->getUserTeam();
+        if (!$team) {
+            return response()->json([
+                'message' => 'لا تملك فريقاً أو لست عضوًا في أي فريق.',
+                'data' => null
+            ], 404);
+        }
+
+        $cacheKey = "team_members_{$team->id}_" . auth()->id();
+        $teamData = Cache::remember($cacheKey, 300, function () use ($team) {
+            // جلب بيانات المالك مع الحقول المطلوبة فقط وتجنب تحميل علاقة media
+            $team->load([
+                'owner:id,name,avatar_url',
+                'members:id,name,avatar_url'
+            ]);
+            
+            // تنسيق بيانات المالك
+            $owner = new TeamMemberResource($team->owner);
+            
+            // تنسيق بيانات الأعضاء
+            $members = TeamMemberResource::collection($team->members);
+            
+            return [
+                'team' => [
+                    'id' => $team->id,
+                    'name' => $team->name,
+                    'owner' => $owner,
+                    'members' => $members
+                ]
+            ];
+        });
+
+        return response()->json([
+            'message' => 'تم جلب بيانات الفريق والأعضاء بنجاح',
+            'data' => $teamData['team']
         ])->setMaxAge(300)->setPublic();
     }
 }
