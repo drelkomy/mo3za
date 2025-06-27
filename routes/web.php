@@ -5,7 +5,6 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentRedirectController;
 use App\Http\Controllers\InvitationController;
-
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 
@@ -113,3 +112,12 @@ Route::post('/admin/reset-password', [ResetPasswordController::class, 'reset'])-
 Route::get('/admin/password-reset-success', function () {
     return view('auth.passwords.success');
 })->name('password.success');
+
+// صفحات معزز القانونية
+Route::get('/privacy-policy', function () {
+    return view('privacy-policy');
+})->name('privacy.policy')->middleware(['throttle:60,1']);
+
+Route::get('/terms-and-conditions', function () {
+    return view('terms-and-conditions');
+})->name('terms.conditions')->middleware(['throttle:60,1']);

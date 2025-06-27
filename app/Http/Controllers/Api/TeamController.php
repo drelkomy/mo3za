@@ -63,12 +63,26 @@ class TeamController extends Controller
             Cache::forget("user_team_" . $memberId);
             
             // مسح كاش إحصائيات مهام العضو
-            for ($i = 1; $i <= 5; $i++) {
-                Cache::forget("member_task_stats_{$team->id}_{$memberId}_page_{$i}");
-            }
+            $this->clearMemberTasksCache($team->id, $memberId);
             
             // مسح كاش مهام العضو
             Cache::forget("my_tasks_" . $memberId);
+        }
+    }
+    
+    /**
+     * مسح كاش مهام عضو محدد
+     */
+    private function clearMemberTasksCache($teamId, $memberId): void
+    {
+        // حذف الكاش لعدة صفحات مثلاً أول 3 صفحات الأكثر عرضًا
+        foreach (range(1, 3) as $page) {
+            foreach ([10, 20, 50] as $perPage) {
+                foreach (['pending', 'in_progress', 'completed', ''] as $status) {
+                    $statusKey = $status ?: 'all';
+                    Cache::forget("member_task_stats_{$teamId}_{$memberId}_page_{$page}_per_{$perPage}_status_{$statusKey}");
+                }
+            }
         }
     }
     
@@ -89,9 +103,7 @@ class TeamController extends Controller
         Cache::forget("my_tasks_" . $receiverId);
         
         // مسح كاش إحصائيات المستلم
-        for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("member_task_stats_{$teamId}_{$receiverId}_page_{$i}");
-        }
+        $this->clearMemberTasksCache($teamId, $receiverId);
         
         // مسح كاش إحصائيات الفريق
         for ($i = 1; $i <= 3; $i++) {
@@ -205,39 +217,50 @@ class TeamController extends Controller
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
+        $withStages = $request->boolean('with_stages', true);
+        $withCounts = $request->boolean('with_counts', true);
+        $searchQuery = $request->input('q');
         
-        $cacheKey = "team_tasks_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "team_tasks_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}_stages_{$withStages}_counts_{$withCounts}_q_{$searchQuery}";
         
-        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
-            $query = Task::where('team_id', $team->id)
-                ->with([
-                    'receiver:id,name,email,avatar_url',
-                    'creator:id,name,email',
-                    'stages' => function($q) {
-                        $q->orderBy('stage_number');
-                    }
-                ])
-                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
-                ->withCount('stages');
+        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
+            $baseQuery = Task::where('team_id', $team->id)
+                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date');
             
-            if ($status) {
-                $query->where('status', $status);
+            // تحميل العلاقات بشكل انتقائي
+            $relations = [
+                'receiver:id,name,email,avatar_url',
+                'creator:id,name,email'
+            ];
+            
+            if ($withStages) {
+                $relations[] = 'stages:id,task_id,title,status,stage_number';
             }
             
-            $tasks = $query->orderBy('created_at', 'desc')
+            $baseQuery->with($relations)->withCount('stages');
+            
+            if ($status) {
+                $baseQuery->where('status', $status);
+            }
+            
+            if ($searchQuery) {
+                $baseQuery->where('title', 'like', "%{$searchQuery}%");
+            }
+            
+            $total = (clone $baseQuery)->count();
+            $tasks = $baseQuery->orderBy('created_at', 'desc')
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
             
-            $total = Task::where('team_id', $team->id)
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->count();
-                
-            $statusCounts = Task::where('team_id', $team->id)
-                ->select('status', DB::raw('count(*) as count'))
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+            $statusCounts = [];
+            if ($withCounts) {
+                $statusCounts = Task::where('team_id', $team->id)
+                    ->select('status', DB::raw('count(*) as count'))
+                    ->groupBy('status')
+                    ->pluck('count', 'status')
+                    ->toArray();
+            }
             
             return [
                 'tasks' => $tasks,
@@ -252,10 +275,10 @@ class TeamController extends Controller
         if ($tasksData['total'] == 0) {
             return response()->json([
                 'message' => 'لا توجد مهام مرتبطة بفريقك حاليًا',
-                'data' => [],
+                'data' => TaskResource::collection(collect()),
                 'meta' => [
                     'total' => 0,
-                    'status_counts' => [],
+                    'status_counts' => $tasksData['status_counts'],
                     'current_page' => $tasksData['current_page'],
                     'per_page' => $tasksData['per_page'],
                     'last_page' => $tasksData['last_page']
@@ -306,14 +329,15 @@ class TeamController extends Controller
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
+        $withStats = $request->boolean('with_stats', true);
         
-        $cacheKey = "team_rewards_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "team_rewards_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}_stats_{$withStats}";
         
-        $rewardsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
+        $rewardsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status, $withStats) {
             // الحصول على معرفات أعضاء الفريق
             $teamMemberIds = $team->members()->pluck('user_id')->push($team->owner_id)->toArray();
             
-            $query = Reward::where('giver_id', auth()->id())
+            $baseQuery = Reward::where('giver_id', auth()->id())
                 ->whereIn('receiver_id', $teamMemberIds)
                 ->with([
                     'receiver:id,name,email,avatar_url',
@@ -323,38 +347,35 @@ class TeamController extends Controller
                 ->select('id', 'amount', 'notes', 'status', 'receiver_id', 'giver_id', 'task_id', 'reward_type', 'reward_description', 'created_at');
             
             if ($status) {
-                $query->where('status', $status);
+                $baseQuery->where('status', $status);
             }
             
-            $rewards = $query->orderBy('created_at', 'desc')
+            $total = (clone $baseQuery)->count();
+            $rewards = $baseQuery->orderBy('created_at', 'desc')
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
             
-            $total = Reward::where('giver_id', auth()->id())
-                ->whereIn('receiver_id', $teamMemberIds)
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->count();
-                
-            $totalAmount = Reward::where('giver_id', auth()->id())
-                ->whereIn('receiver_id', $teamMemberIds)
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->sum('amount');
-                
-            $userStats = Reward::where('giver_id', auth()->id())
-                ->whereIn('receiver_id', $teamMemberIds)
-                ->select('receiver_id', DB::raw('SUM(amount) as total_amount'), DB::raw('COUNT(*) as count'))
-                ->groupBy('receiver_id')
-                ->get()
-                ->keyBy('receiver_id')
-                ->toArray();
-                
-            $statusCounts = Reward::where('giver_id', auth()->id())
-                ->whereIn('receiver_id', $teamMemberIds)
-                ->select('status', DB::raw('count(*) as count'))
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+            $totalAmount = 0;
+            $userStats = [];
+            $statusCounts = [];
+            
+            if ($withStats && $total > 0) {
+                $totalAmount = (clone $baseQuery)->sum('amount');
+                $userStats = Reward::where('giver_id', auth()->id())
+                    ->whereIn('receiver_id', $teamMemberIds)
+                    ->select('receiver_id', DB::raw('SUM(amount) as total_amount'), DB::raw('COUNT(*) as count'))
+                    ->groupBy('receiver_id')
+                    ->get()
+                    ->keyBy('receiver_id')
+                    ->toArray();
+                $statusCounts = Reward::where('giver_id', auth()->id())
+                    ->whereIn('receiver_id', $teamMemberIds)
+                    ->select('status', DB::raw('count(*) as count'))
+                    ->groupBy('status')
+                    ->pluck('count', 'status')
+                    ->toArray();
+            }
             
             return [
                 'rewards' => $rewards,
@@ -371,7 +392,7 @@ class TeamController extends Controller
         if ($rewardsData['total'] == 0) {
             return response()->json([
                 'message' => 'لم تقم بتوزيع أي مكافآت لأعضاء الفريق',
-                'data' => [],
+                'data' => TeamRewardResource::collection(collect()),
                 'meta' => [
                     'total' => 0,
                     'total_amount' => 0,
@@ -732,57 +753,76 @@ class TeamController extends Controller
             return response()->json(['message' => 'غير مصرح لك بالوصول إلى مكافآت هذا الفريق'], 403);
         }
         
+        $userId = auth()->id();
+        $key = "team_rewards_all_{$team->id}_{$userId}";
+        $maxAttempts = 60; // الحد الأقصى للمحاولات في الدقيقة
+        $decaySeconds = 60; // فترة التحلل بالثواني
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
+            ], 429);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+        
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
+        $withStats = $request->boolean('with_stats', true);
         
-        $cacheKey = "team_rewards_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "team_rewards_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}_stats_{$withStats}";
         
-        $rewardsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
-            $query = Reward::whereIn('receiver_id', $team->members()->pluck('user_id'))
-                ->with(['task:id,title', 'receiver:id,name']);
+        $rewardsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status, $withStats) {
+            $baseQuery = Reward::whereIn('receiver_id', $team->members()->pluck('user_id'))
+                ->with([
+                    'task:id,title',
+                    'receiver:id,name'
+                ]);
             
             if ($status) {
-                $query->where('status', $status);
+                $baseQuery->where('status', $status);
             }
             
-            $total = $query->count();
-            $totalAmount = $query->sum('amount');
-            $statusCounts = DB::table('rewards')
-                ->select([
-                    DB::raw('SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending'),
-                    DB::raw('SUM(CASE WHEN status = "received" THEN 1 ELSE 0 END) as received')
-                ])
-                ->whereIn('receiver_id', $team->members()->pluck('user_id'))
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->first();
-            
-            $currentPage = $page;
-            $lastPage = ceil($total / $perPage);
-            
-            $rewards = $query->offset(($currentPage - 1) * $perPage)
+            $total = (clone $baseQuery)->count();
+            $rewards = $baseQuery->offset(($page - 1) * $perPage)
                 ->limit($perPage)
                 ->orderBy('created_at', 'desc')
                 ->get();
+            
+            $totalAmount = 0;
+            $statusCounts = [];
+            
+            if ($withStats && $total > 0) {
+                $totalAmount = (clone $baseQuery)->sum('amount');
+                $statusCounts = DB::table('rewards')
+                    ->select([
+                        DB::raw('SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending'),
+                        DB::raw('SUM(CASE WHEN status = "received" THEN 1 ELSE 0 END) as received')
+                    ])
+                    ->whereIn('receiver_id', $team->members()->pluck('user_id'))
+                    ->when($status, fn($q) => $q->where('status', $status))
+                    ->first();
+            }
             
             return [
                 'rewards' => $rewards,
                 'total' => $total,
                 'total_amount' => $totalAmount,
                 'status_counts' => [
-                    'pending' => $statusCounts->pending,
-                    'received' => $statusCounts->received
+                    'pending' => $statusCounts->pending ?? 0,
+                    'received' => $statusCounts->received ?? 0
                 ],
-                'current_page' => $currentPage,
+                'current_page' => $page,
                 'per_page' => $perPage,
-                'last_page' => $lastPage
+                'last_page' => ceil($total / $perPage)
             ];
         });
         
         if ($rewardsData['total'] == 0) {
             return response()->json([
                 'message' => 'لا توجد مكافآت مرتبطة بأعضاء الفريق حاليًا',
-                'data' => [],
+                'data' => \App\Http\Resources\RewardResource::collection(collect()),
                 'meta' => [
                     'total' => 0,
                     'total_amount' => 0,
@@ -831,60 +871,78 @@ class TeamController extends Controller
             ], 404);
         }
 
+        $userId = auth()->id();
+        $key = "member_tasks_{$team->id}_{$memberId}_{$userId}";
+        $maxAttempts = 60; // الحد الأقصى للمحاولات في الدقيقة
+        $decaySeconds = 60; // فترة التحلل بالثواني
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
+            ], 429);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+
         $page = $request->input('page', 1);
         $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
+        $withStages = $request->boolean('with_stages', true);
+        $withCounts = $request->boolean('with_counts', true);
+        $searchQuery = $request->input('q');
 
-        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_page_{$page}_per_{$perPage}_status_{$status}_stages_{$withStages}_counts_{$withCounts}_q_{$searchQuery}";
 
-        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $page, $perPage, $status) {
-            $query = Task::where('team_id', $team->id)
+        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
+            $baseQuery = Task::where('team_id', $team->id)
                 ->where(function ($q) use ($memberId) {
                     $q->where('receiver_id', $memberId)
                       ->orWhereHas('members', function ($query) use ($memberId) {
                           $query->where('user_id', $memberId);
                       });
                 })
-                ->with([
-                    'receiver:id,name,email,avatar_url',
-                    'creator:id,name,email',
-                    'stages' => function($q) {
-                        $q->orderBy('stage_number');
-                    }
-                ])
-                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
-                ->withCount('stages');
+                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date');
+
+            // تحميل العلاقات بشكل انتقائي
+            $relations = [
+                'receiver:id,name,email,avatar_url',
+                'creator:id,name,email'
+            ];
+            
+            if ($withStages) {
+                $relations[] = 'stages:id,task_id,title,status,stage_number';
+            }
+            
+            $baseQuery->with($relations)->withCount('stages');
 
             if ($status) {
-                $query->where('status', $status);
+                $baseQuery->where('status', $status);
             }
 
-            $tasks = $query->orderBy('created_at', 'desc')
+            if ($searchQuery) {
+                $baseQuery->where('title', 'like', "%{$searchQuery}%");
+            }
+
+            $total = (clone $baseQuery)->count();
+            $tasks = $baseQuery->orderBy('created_at', 'desc')
                 ->skip(($page - 1) * $perPage)
                 ->take($perPage)
                 ->get();
 
-            $total = Task::where('team_id', $team->id)
-                ->where(function ($q) use ($memberId) {
-                    $q->where('receiver_id', $memberId)
-                      ->orWhereHas('members', function ($query) use ($memberId) {
-                          $query->where('user_id', $memberId);
-                      });
-                })
-                ->when($status, fn($q) => $q->where('status', $status))
-                ->count();
-
-            $statusCounts = Task::where('team_id', $team->id)
-                ->where(function ($q) use ($memberId) {
-                    $q->where('receiver_id', $memberId)
-                      ->orWhereHas('members', function ($query) use ($memberId) {
-                          $query->where('user_id', $memberId);
-                      });
-                })
-                ->select('status', DB::raw('count(*) as count'))
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+            $statusCounts = [];
+            if ($withCounts && $total > 0) {
+                $statusCounts = Task::where('team_id', $team->id)
+                    ->where(function ($q) use ($memberId) {
+                        $q->where('receiver_id', $memberId)
+                          ->orWhereHas('members', function ($query) use ($memberId) {
+                              $query->where('user_id', $memberId);
+                          });
+                    })
+                    ->select('status', DB::raw('count(*) as count'))
+                    ->groupBy('status')
+                    ->pluck('count', 'status')
+                    ->toArray();
+            }
 
             return [
                 'tasks' => $tasks,
@@ -899,10 +957,10 @@ class TeamController extends Controller
         if ($tasksData['total'] == 0) {
             return response()->json([
                 'message' => 'لا توجد مهام مرتبطة بهذا العضو حاليًا',
-                'data' => [],
+                'data' => TaskResource::collection(collect()),
                 'meta' => [
                     'total' => 0,
-                    'status_counts' => [],
+                    'status_counts' => $tasksData['status_counts'],
                     'current_page' => $tasksData['current_page'],
                     'per_page' => $tasksData['per_page'],
                     'last_page' => $tasksData['last_page']
