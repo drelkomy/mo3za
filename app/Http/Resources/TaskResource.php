@@ -40,10 +40,19 @@ class TaskResource extends JsonResource
                         'completed_at' => $stage->completed_at ? $stage->completed_at->format('Y-m-d H:i:s') : null,
                         'proof_notes' => $stage->proof_notes,
                         'proof_files' => $stage->proof_files,
+                        'start_date' => $stage->start_date ? $stage->start_date->format('Y-m-d') : null,
+                        'end_date' => $stage->end_date ? $stage->end_date->format('Y-m-d') : null,
+                        'completed_at' => $stage->completed_at ? $stage->completed_at->format('Y-m-d H:i:s') : null,
                     ];
                 });
             }),
+            'start_date' => $this->start_date ? $this->start_date->format('Y-m-d') : null,
             'due_date' => $this->due_date ? $this->due_date->format('Y-m-d') : null,
+            'duration_days' => $this->duration_days,
+            'priority' => $this->priority,
+            'reward_type' => $this->reward_type,
+            'reward_amount' => $this->reward_amount,
+            'reward_description' => $this->reward_description,
             'created_at' => $this->created_at->format('Y-m-d H:i:s'),
         ];
     }

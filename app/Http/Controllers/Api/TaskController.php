@@ -112,6 +112,14 @@ class TaskController extends Controller
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+            // مسح كاش إحصائيات مهام الأعضاء
+            for ($i = 1; $i <= 3; $i++) {
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            }
         }
         
         return response()->json([
@@ -134,7 +142,13 @@ class TaskController extends Controller
             return response()->json(['message' => 'غير مصرح لك بإكمال هذه المرحلة'], 403);
         }
         
-        $stage->update(['status' => 'completed']);
+        $stage->update([
+            'status' => 'completed',
+            'proof_notes' => $request->input('proof_notes', ''),
+            'proof_files' => $request->input('proof_files', []),
+            'end_date' => now()->toDateString(),
+            'completed_at' => now()
+        ]);
         
         // تحديث تقدم المهمة
         $task->updateProgress();
@@ -142,6 +156,14 @@ class TaskController extends Controller
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+            // مسح كاش إحصائيات مهام الأعضاء
+            for ($i = 1; $i <= 3; $i++) {
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            }
         }
         
         return response()->json([
@@ -165,12 +187,22 @@ class TaskController extends Controller
         
         $task->update([
             'status' => 'completed',
-            'progress' => 100
+            'progress' => 100,
+            'proof_notes' => $request->input('proof_notes', ''),
+            'proof_files' => $request->input('proof_files', [])
         ]);
         
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
+            // مسح كاش إحصائيات مهام الأعضاء
+            for ($i = 1; $i <= 3; $i++) {
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
+                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            }
         }
         
         return response()->json([

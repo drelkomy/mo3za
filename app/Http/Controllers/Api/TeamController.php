@@ -226,7 +226,7 @@ class TeamController extends Controller
         
         $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
             $baseQuery = Task::where('team_id', $team->id)
-                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date');
+                ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'start_date', 'due_date', 'duration_days', 'priority', 'reward_type', 'reward_amount', 'reward_description');
             
             // تحميل العلاقات بشكل انتقائي
             $relations = [
@@ -492,7 +492,9 @@ class TeamController extends Controller
                     'status' => 'pending',
                     'progress' => 0,
                     'priority' => $request->input('priority', 'normal'),
+                    'start_date' => $request->input('start_date', now()->toDateString()),
                     'due_date' => $request->input('due_date'),
+                    'duration_days' => $request->input('duration_days', 7),
                     'total_stages' => $request->input('total_stages', 3),
                     'reward_amount' => $request->input('reward_amount'),
                     'reward_type' => $request->input('reward_type', 'cash'),
@@ -508,7 +510,7 @@ class TeamController extends Controller
                 // إنشاء مراحل المهمة تلقائيًا وفق عدد المراحل والمدة الزمنية
                 $totalStages = $request->input('total_stages', 3);
                 $dueDate = $request->input('due_date') ? \Carbon\Carbon::parse($request->input('due_date')) : \Carbon\Carbon::now()->addDays(7);
-                $startDate = \Carbon\Carbon::now(); // تاريخ البداية هو تاريخ اليوم تلقائيًا
+                $startDate = $request->input('start_date') ? \Carbon\Carbon::parse($request->input('start_date')) : \Carbon\Carbon::now();
                 $durationDays = $startDate->diffInDays($dueDate);
                 $stageDuration = $durationDays > 0 ? floor($durationDays / $totalStages) : 0;
                 $remainingDays = $durationDays > 0 ? $durationDays % $totalStages : 0;
@@ -558,6 +560,14 @@ class TeamController extends Controller
                 
                 
                 $this->clearTaskCache($task->id, $team->id, $rid);
+                // مسح كاش إحصائيات مهام الأعضاء
+                for ($i = 1; $i <= 3; $i++) {
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_20");
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_30");
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_40");
+                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_50");
+                }
                 
                 // تحميل العلاقات
                 $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages']);
