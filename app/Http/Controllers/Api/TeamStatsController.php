@@ -88,7 +88,7 @@ class TeamStatsController extends Controller
             // جلب أعضاء الفريق
             $members = $team->members()->get(['users.id', 'name', 'email', 'avatar_url']);
             
-            // جلب إجمالي المهام للفريق
+            // جلب مهام الفريق لحساب إحصائيات الأعضاء
             $allTeamTasks = Task::where('creator_id', $team->owner_id)
                 ->select('id', 'title', 'receiver_id', 'status', 'progress', 'due_date', 'created_at')
                 ->get();
@@ -97,12 +97,6 @@ class TeamStatsController extends Controller
             $taskUserRelations = DB::table('task_user')
                 ->whereIn('task_id', $allTeamTasks->pluck('id')->toArray())
                 ->get();
-                
-            // إجمالي المهام للفريق
-            $totalTeamTasks = $allTeamTasks->count();
-            $completedTeamTasks = $allTeamTasks->where('status', 'completed')->count();
-            $pendingTeamTasks = $allTeamTasks->where('status', 'pending')->count();
-            $inProgressTeamTasks = $allTeamTasks->where('status', 'in_progress')->count();
             
             $result = [];
             
@@ -145,20 +139,12 @@ class TeamStatsController extends Controller
                 ];
             }
             
-            // إضافة إجمالي الفريق
-            $teamSummary = [
-                'total_tasks' => $totalTeamTasks,
-                'completed_tasks' => $completedTeamTasks,
-                'pending_tasks' => $pendingTeamTasks,
-                'in_progress_tasks' => $inProgressTeamTasks,
-                'completion_rate' => $totalTeamTasks > 0 ? round(($completedTeamTasks / $totalTeamTasks) * 100, 2) : 0
-            ];
+
             
             return response()->json([
                 'message' => 'تم جلب إحصائيات أعضاء الفريق بنجاح',
                 'data' => [
-                    'members' => TeamMemberStatsResource::collection($result),
-                    'team_summary' => $teamSummary
+                    'members' => TeamMemberStatsResource::collection($result)
                 ]
             ])->setMaxAge(300)->setPublic();
         } catch (\Exception $e) {
@@ -175,8 +161,6 @@ class TeamStatsController extends Controller
     public function getMemberTaskStats(MemberTaskStatsRequest $request): JsonResponse
     {
         $memberId = $request->input('member_id');
-        $page = $request->input('page', 1);
-        $perPage = 10;
         $team = Team::where('owner_id', auth()->id())->first();
         
         if (!$team) {
@@ -189,9 +173,9 @@ class TeamStatsController extends Controller
             return response()->json(['message' => 'العضو ليس في فريقك'], 403);
         }
         
-        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_page_{$page}";
+        $cacheKey = "member_task_stats_{$team->id}_{$memberId}";
         
-        $data = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $page, $perPage) {
+        $data = Cache::remember($cacheKey, 300, function () use ($team, $memberId) {
             $member = User::find($memberId);
             
             // جلب المهام مع المراحل
@@ -209,8 +193,6 @@ class TeamStatsController extends Controller
             $totalTasks = $tasksQuery->count();
             
             $tasks = $tasksQuery->orderBy('created_at', 'desc')
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
                 ->get();
                 
             $completedTasks = Task::where('creator_id', $team->owner_id)
@@ -263,13 +245,7 @@ class TeamStatsController extends Controller
                     'completion_rate' => $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100, 2) : 0,
                     'average_progress' => round($averageProgress, 1)
                 ],
-                'tasks' => $tasks,
-                'pagination' => [
-                    'total' => $totalTasks,
-                    'per_page' => $perPage,
-                    'current_page' => $page,
-                    'last_page' => ceil($totalTasks / $perPage)
-                ]
+                'tasks' => $tasks
             ];
         });
         
@@ -277,8 +253,7 @@ class TeamStatsController extends Controller
             'message' => 'تم جلب إحصائيات مهام العضو بنجاح',
             'data' => [
                 'member' => new MemberTaskStatsResource($data['stats']),
-                'tasks' => MemberTaskResource::collection($data['tasks']),
-                'pagination' => $data['pagination']
+                'tasks' => MemberTaskResource::collection($data['tasks'])
             ]
         ])->setMaxAge(300)->setPublic();
     }
@@ -288,8 +263,6 @@ class TeamStatsController extends Controller
      */
     public function getTeamMembersTaskStats(TeamMembersTaskStatsRequest $request): JsonResponse
     {
-        $page = $request->input('page', 1);
-        $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
         $team = Team::where('owner_id', auth()->id())->first();
         
@@ -297,17 +270,14 @@ class TeamStatsController extends Controller
             return response()->json(['message' => 'أنت لست قائد فريق'], 403);
         }
         
-        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "team_members_task_stats_{$team->id}_status_{$status}";
         
-        $data = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
-            // جلب أعضاء الفريق مع التصفيح
+        $data = Cache::remember($cacheKey, 300, function () use ($team, $status) {
+            // جلب جميع أعضاء الفريق
             $memberIds = $team->members()->pluck('user_id');
-            $totalMembers = $memberIds->count();
             
             $members = User::whereIn('id', $memberIds)
                 ->select('id', 'name', 'email', 'avatar_url')
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
                 ->get();
             
             // جلب جميع مهام الفريق مرة واحدة بناءً على creator_id
@@ -389,37 +359,15 @@ class TeamStatsController extends Controller
                 ];
             }
             
-            // إحصائيات الفريق الإجمالية (استبعاد مهام مالك الفريق)
-            $teamTasksOnly = $allTeamTasks->where('receiver_id', '!=', $team->owner_id);
-            $totalTeamTasks = $teamTasksOnly->count();
-            $completedTeamTasks = $teamTasksOnly->where('status', 'completed')->count();
-            $pendingTeamTasks = $teamTasksOnly->where('status', 'pending')->count();
-            $inProgressTeamTasks = $teamTasksOnly->where('status', 'in_progress')->count();
-            
             return [
-                'members' => $membersData,
-                'team_summary' => [
-                    'total_tasks' => $totalTeamTasks,
-                    'completed_tasks' => $completedTeamTasks,
-                    'pending_tasks' => $pendingTeamTasks,
-                    'in_progress_tasks' => $inProgressTeamTasks,
-                    'completion_rate' => $totalTeamTasks > 0 ? round(($completedTeamTasks / $totalTeamTasks) * 100, 2) : 0
-                ],
-                'pagination' => [
-                    'total' => $totalMembers,
-                    'per_page' => $perPage,
-                    'current_page' => $page,
-                    'last_page' => ceil($totalMembers / $perPage)
-                ]
+                'members' => $membersData
             ];
         });
         
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
             'data' => [
-                'members' => TeamMemberStatsResource::collection($data['members']),
-                'team_summary' => new TeamSummaryResource($data['team_summary']),
-                'pagination' => $data['pagination']
+                'members' => TeamMemberStatsResource::collection($data['members'])
             ]
         ])->setMaxAge(300)->setPublic();
     }

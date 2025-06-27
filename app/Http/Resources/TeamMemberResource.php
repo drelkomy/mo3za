@@ -2,22 +2,19 @@
 
 namespace App\Http\Resources;
 
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class TeamMemberResource extends JsonResource
 {
-    /**
-     * تحويل المورد إلى مصفوفة.
-     *
-     * @return array<string, mixed>
-     */
-    public function toArray(Request $request): array
+    public function toArray($request): array
     {
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'avatar_url' => $this->avatar_url
+            'email' => $this->email,
+            'avatar_url' => $this->avatar_url,
+            'completion_percentage_margin' => $this->completion_percentage_margin,
+            'tasks' => TaskResource::collection($this->whenLoaded('tasks'))
         ];
     }
 }

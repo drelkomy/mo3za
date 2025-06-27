@@ -112,13 +112,21 @@ class TaskController extends Controller
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء
-            for ($i = 1; $i <= 3; $i++) {
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
+            $perPages = [10, 20, 30, 40, 50];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($perPages as $per) {
+                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
+                }
+            }
+            // مسح كاش مهام الفريق لجميع الصفحات والحالات
+            $statuses = ['', 'completed', 'pending', 'in_progress'];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($statuses as $status) {
+                    foreach ($perPages as $per) {
+                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
+                    }
+                }
             }
         }
         
@@ -156,13 +164,21 @@ class TaskController extends Controller
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء
-            for ($i = 1; $i <= 3; $i++) {
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
+            $perPages = [10, 20, 30, 40, 50];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($perPages as $per) {
+                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
+                }
+            }
+            // مسح كاش مهام الفريق لجميع الصفحات والحالات
+            $statuses = ['', 'completed', 'pending', 'in_progress'];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($statuses as $status) {
+                    foreach ($perPages as $per) {
+                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
+                    }
+                }
             }
         }
         
@@ -195,13 +211,21 @@ class TaskController extends Controller
         // مسح الكاش المتعلق بالمهمة
         if ($task->team_id) {
             $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء
-            for ($i = 1; $i <= 3; $i++) {
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_10");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_20");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_30");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_40");
-                Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_50");
+            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
+            $perPages = [10, 20, 30, 40, 50];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($perPages as $per) {
+                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
+                }
+            }
+            // مسح كاش مهام الفريق لجميع الصفحات والحالات
+            $statuses = ['', 'completed', 'pending', 'in_progress'];
+            for ($i = 1; $i <= 10; $i++) {
+                foreach ($statuses as $status) {
+                    foreach ($perPages as $per) {
+                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
+                    }
+                }
             }
         }
         

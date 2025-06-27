@@ -561,12 +561,22 @@ class TeamController extends Controller
                 
                 $this->clearTaskCache($task->id, $team->id, $rid);
                 // مسح كاش إحصائيات مهام الأعضاء
-                for ($i = 1; $i <= 3; $i++) {
+                for ($i = 1; $i <= 10; $i++) {
                     Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
                     Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_20");
                     Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_30");
                     Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_40");
                     Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_50");
+                }
+                // مسح كاش مهام الفريق لجميع الصفحات والحالات
+                $perPages = [10, 20, 30, 40, 50];
+                $statuses = ['', 'completed', 'pending', 'in_progress'];
+                for ($i = 1; $i <= 10; $i++) {
+                    foreach ($perPages as $per) {
+                        foreach ($statuses as $status) {
+                            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_{$per}_status_{$status}");
+                        }
+                    }
                 }
                 
                 // تحميل العلاقات
@@ -681,16 +691,14 @@ class TeamController extends Controller
             return response()->json(['message' => 'غير مصرح لك بالوصول إلى إحصائيات هذا الفريق'], 403);
         }
         
-        $page = $request->input('page', 1);
-        $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
         
-        $cacheKey = "team_members_task_stats_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}";
+        $cacheKey = "team_members_task_stats_{$team->id}_all_status_{$status}";
         
-        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status) {
+        $statsData = Cache::remember($cacheKey, 300, function () use ($team, $status) {
             // جلب أعضاء الفريق مع إحصائيات المهام
             $query = $team->members()
-                ->select('users.id', 'users.name', 'users.email')
+                ->select('users.id', 'users.name', 'users.email', 'users.avatar_url')
                 ->withCount([
                     'receivedTasks as total_tasks',
                     'receivedTasks as pending_tasks' => function ($q) {
@@ -713,42 +721,31 @@ class TeamController extends Controller
             }
             
             $total = $team->members()->count();
-            $currentPage = $page;
-            $lastPage = ceil($total / $perPage);
-            
-            $members = $query->offset(($currentPage - 1) * $perPage)
-                ->limit($perPage)
-                ->get();
+            $members = $query->get();
             
             return [
                 'members' => $members,
-                'total' => $total,
-                'current_page' => $currentPage,
-                'per_page' => $perPage,
-                'last_page' => $lastPage
+                'total' => $total
             ];
         });
         
+        $mappedData = $statsData['members']->map(function ($member) use ($status) {
+            return [
+                'id' => $member->id,
+                'name' => $member->name,
+                'email' => $member->email,
+                'avatar_url' => $member->avatar_url ? 'https://www.moezez.com/storage/avatar/' . $member->avatar_url : null,
+                'total_tasks' => $member->total_tasks,
+                'pending_tasks' => $member->pending_tasks,
+                'in_progress_tasks' => $member->in_progress_tasks,
+                'completed_tasks' => $member->completed_tasks,
+                'filtered_tasks' => $status ? $member->filtered_tasks : null
+            ];
+        });
+
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
-            'data' => $statsData['members']->map(function ($member) use ($status) {
-                return [
-                    'id' => $member->id,
-                    'name' => $member->name,
-                    'email' => $member->email,
-                    'total_tasks' => $member->total_tasks,
-                    'pending_tasks' => $member->pending_tasks,
-                    'in_progress_tasks' => $member->in_progress_tasks,
-                    'completed_tasks' => $member->completed_tasks,
-                    'filtered_tasks' => $status ? $member->filtered_tasks : null
-                ];
-            }),
-            'meta' => [
-                'total' => $statsData['total'],
-                'current_page' => $statsData['current_page'],
-                'per_page' => $statsData['per_page'],
-                'last_page' => $statsData['last_page']
-            ]
+            'data' => $mappedData
         ])->setMaxAge(300)->setPublic();
     }
     
@@ -898,16 +895,13 @@ class TeamController extends Controller
 
         RateLimiter::hit($key, $decaySeconds);
 
-        $page = $request->input('page', 1);
-        $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
         $withStages = $request->boolean('with_stages', true);
-        $withCounts = $request->boolean('with_counts', true);
         $searchQuery = $request->input('q');
 
-        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_page_{$page}_per_{$perPage}_status_{$status}_stages_{$withStages}_counts_{$withCounts}_q_{$searchQuery}";
+        $cacheKey = "member_task_stats_{$team->id}_{$memberId}_status_{$status}_stages_{$withStages}_q_{$searchQuery}";
 
-        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
+        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $memberId, $status, $withStages, $searchQuery) {
             $baseQuery = Task::where('team_id', $team->id)
                 ->where(function ($q) use ($memberId) {
                     $q->where('receiver_id', $memberId)
@@ -937,61 +931,23 @@ class TeamController extends Controller
                 $baseQuery->where('title', 'like', "%{$searchQuery}%");
             }
 
-            $total = (clone $baseQuery)->count();
-            $tasks = $baseQuery->orderBy('created_at', 'desc')
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
-
-            $statusCounts = [];
-            if ($withCounts && $total > 0) {
-                $statusCounts = Task::where('team_id', $team->id)
-                    ->where(function ($q) use ($memberId) {
-                        $q->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($query) use ($memberId) {
-                              $query->where('user_id', $memberId);
-                          });
-                    })
-                    ->select('status', DB::raw('count(*) as count'))
-                    ->groupBy('status')
-                    ->pluck('count', 'status')
-                    ->toArray();
-            }
+            $tasks = $baseQuery->orderBy('created_at', 'desc')->get();
 
             return [
-                'tasks' => $tasks,
-                'total' => $total,
-                'status_counts' => $statusCounts,
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'last_page' => ceil($total / $perPage)
+                'tasks' => $tasks
             ];
         });
 
-        if ($tasksData['total'] == 0) {
+        if ($tasksData['tasks']->isEmpty()) {
             return response()->json([
                 'message' => 'لا توجد مهام مرتبطة بهذا العضو حاليًا',
-                'data' => TaskResource::collection(collect()),
-                'meta' => [
-                    'total' => 0,
-                    'status_counts' => $tasksData['status_counts'],
-                    'current_page' => $tasksData['current_page'],
-                    'per_page' => $tasksData['per_page'],
-                    'last_page' => $tasksData['last_page']
-                ]
+                'data' => TaskResource::collection(collect())
             ])->setMaxAge(300)->setPublic();
         }
 
         return response()->json([
             'message' => 'تم جلب مهام العضو بنجاح',
-            'data' => TaskResource::collection($tasksData['tasks']),
-            'meta' => [
-                'total' => $tasksData['total'],
-                'status_counts' => $tasksData['status_counts'],
-                'current_page' => $tasksData['current_page'],
-                'per_page' => $tasksData['per_page'],
-                'last_page' => $tasksData['last_page']
-            ]
+            'data' => TaskResource::collection($tasksData['tasks'])
         ])->setMaxAge(300)->setPublic();
     }
     
