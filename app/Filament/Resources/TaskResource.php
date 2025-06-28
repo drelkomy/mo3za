@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TaskResource\Pages;
 use App\Filament\Resources\TaskResource\RelationManagers;
 use App\Models\Task;
+use App\Services\CacheService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -321,18 +322,24 @@ class TaskResource extends Resource
                                 'giver_id' => $record->creator_id,
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => $record->reward_amount,
-                                'status' => 'completed',
+                                'status' => 'pending',
                                 'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
+                            
+                            // مسح كاش الفريق
+                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id);
                         } elseif ($record->reward_type === 'other' && $record->reward_description) {
                             \App\Models\Reward::create([
                                 'task_id' => $record->id,
                                 'giver_id' => $record->creator_id,
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => 0,
-                                'status' => 'completed',
+                                'status' => 'pending',
                                 'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
+                            
+                            // مسح كاش الفريق
+                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id);
                         }
                         
                         \Filament\Notifications\Notification::make()
@@ -384,4 +391,6 @@ class TaskResource extends Resource
             'view' => Pages\ViewTask::route('/{record}'),
         ];
     }
+    
+
 }

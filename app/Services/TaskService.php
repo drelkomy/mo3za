@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Task;
 use App\Models\TaskStage;
 use App\Models\Reward;
+use App\Services\CacheService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -153,12 +154,10 @@ class TaskService
         try {
             Reward::create([
                 'task_id' => $task->id,
-                'user_id' => $task->assigned_to,
+                'receiver_id' => $task->receiver_id,
+                'giver_id' => $task->creator_id,
                 'amount' => $task->reward_amount,
-                'status' => 'received',
-                'distributed_at' => now(),
-                'received_at' => now(),
-                'distributed_by' => $task->creator_id,
+                'status' => 'pending',
             ]);
 
             $task->update([
@@ -166,13 +165,18 @@ class TaskService
                 'reward_distributed_at' => now(),
             ]);
 
-            Log::info("تم توزيع مكافأة بقيمة {$task->reward_amount} للمستخدم {$task->assigned_to}");
+            // مسح كاش الفريق
+            CacheService::clearTeamCache($task->creator_id, $task->receiver_id);
+
+            Log::info("تم توزيع مكافأة بقيمة {$task->reward_amount} للمستخدم {$task->receiver_id}");
             
         } catch (\Exception $e) {
             Log::error("فشل في توزيع المكافأة للمهمة {$task->id}: " . $e->getMessage());
             throw $e;
         }
     }
+    
+
 
     /**
      * الحصول على إحصائيات المهمة

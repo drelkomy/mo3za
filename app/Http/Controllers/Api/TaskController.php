@@ -8,6 +8,7 @@ use App\Http\Resources\TaskDetailsResource;
 use App\Models\Task;
 use App\Models\Team;
 use App\Models\TaskStage;
+use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -45,10 +46,6 @@ class TaskController extends Controller
      */
     private function clearTaskCache(int $creatorId, int $receiverId, int $taskId = null): void
     {
-        // الحصول على معرف الفريق
-        $team = Team::where('owner_id', $creatorId)->first();
-        $teamId = $team ? $team->id : null;
-        
         $this->clearUserCache($creatorId);
         if ($receiverId !== $creatorId) {
             $this->clearUserCache($receiverId);
@@ -67,9 +64,7 @@ class TaskController extends Controller
         }
         
         // مسح كاش الفريق المحدد فقط
-        if ($teamId) {
-            $this->clearSpecificTeamCache($teamId, $creatorId, $receiverId);
-        }
+        CacheService::clearTeamCache($creatorId, $receiverId);
     }
     
     /**
@@ -93,50 +88,7 @@ class TaskController extends Controller
         }
     }
     
-    /**
-     * مسح كاش الفريق المحدد فقط
-     */
-    private function clearSpecificTeamCache(int $teamId, int $creatorId, int $receiverId): void
-    {
-        // مسح كاش مهام الفريق
-        foreach (['all', 'pending', 'completed', 'in_progress'] as $status) {
-            for ($page = 1; $page <= 3; $page++) {
-                foreach ([10, 20, 50] as $perPage) {
-                    Cache::forget("team_tasks_{$creatorId}_page_{$page}_per_{$perPage}_status_{$status}_stages_true_counts_true_q_none");
-                    Cache::forget("team_tasks_{$creatorId}_page_{$page}_per_{$perPage}_status_{$status}_stages_false_counts_false_q_none");
-                }
-            }
-        }
-        
-        // مسح كاش إحصائيات الفريق
-        Cache::forget("member_stats_{$creatorId}");
-        Cache::forget("team_members_task_stats_{$creatorId}_all");
-        Cache::forget("member_task_stats_{$creatorId}_{$receiverId}");
-        
-        // مسح كاش مكافآت الفريق
-        foreach (['', 'all', 'pending', 'received'] as $status) {
-            for ($page = 1; $page <= 3; $page++) {
-                foreach ([10, 20, 50] as $perPage) {
-                    $statusSuffix = $status ? "_status_{$status}" : '';
-                    Cache::forget("team_rewards_{$teamId}_page_{$page}_per_{$perPage}{$statusSuffix}_stats_true");
-                    Cache::forget("team_rewards_{$teamId}_page_{$page}_per_{$perPage}{$statusSuffix}_stats_false");
-                }
-            }
-        }
-        Cache::forget("team_rewards_{$teamId}_{$creatorId}");
-        Cache::forget("team_rewards_all_{$teamId}_{$creatorId}");
-        
-        // مسح كاش مكافآت المستقبل
-        Cache::forget("my_rewards_{$receiverId}");
-        foreach (['', 'all', 'pending', 'received'] as $status) {
-            for ($page = 1; $page <= 3; $page++) {
-                foreach ([5, 10, 20] as $perPage) {
-                    $statusSuffix = $status ? "_status_{$status}" : '';
-                    Cache::forget("my_rewards_data_{$receiverId}_page_{$page}_per_{$perPage}{$statusSuffix}");
-                }
-            }
-        }
-    }
+
     
 
     

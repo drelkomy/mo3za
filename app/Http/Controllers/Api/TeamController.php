@@ -589,13 +589,8 @@ class TeamController extends Controller
                 }
                 
                 
-                // مسح كاش المهام
-                $this->clearTaskCache($task->id, $team->id, $rid);
-                // مسح كاش إحصائيات مهام الأعضاء
-                Cache::forget("team_members_task_stats_{$team->id}_all");
-                foreach (['all', 'pending', 'completed', 'in_progress'] as $cacheStatus) {
-                    Cache::forget("team_members_task_stats_{$team->id}_all_status_{$cacheStatus}");
-                }
+                // مسح كاش الفريق
+                \App\Services\CacheService::clearTeamCache(auth()->id(), $rid);
                 
                 // تحميل العلاقات
                 $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages']);
