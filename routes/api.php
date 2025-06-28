@@ -30,8 +30,6 @@ Route::match(['get', 'post'], '/payment/success/{paymentId}', [\App\Http\Control
 Route::match(['get', 'post'], '/payment/cancel/{paymentId}', [\App\Http\Controllers\Api\ApiPaymentController::class, 'cancel']);
 Route::match(['get', 'post'], '/payment/callback', [\App\Http\Controllers\Api\ApiPaymentController::class, 'callback']);
 
-// مسار تفاصيل المهمة بدون تسجيل دخول للاختبار
-Route::post('/task-details-test', \App\Http\Controllers\Api\TaskDetailsController::class);
 
 // المسارات المحمية بالمصادقة - 60 طلبات في الدقيقة للمستخدمين
 Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
@@ -78,11 +76,13 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         ->middleware('throttle:10,1'); // 10 إغلاق في الدقيقة
     Route::post('/tasks/{task}/update-status', [\App\Http\Controllers\Api\TaskController::class, 'updateTaskStatus'])
         ->middleware('throttle:20,1'); // 20 تحديث في الدقيقة
+    Route::post('/tasks/update-due-date', [\App\Http\Controllers\Api\TaskController::class, 'updateDueDate'])
+        ->middleware('throttle:10,1'); // 10 تحديث في الدقيقة
     Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآتي
     Route::post('/tasks/{task}/stages', [\App\Http\Controllers\Api\TaskController::class, 'getTaskStages'])
         ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مراحل مهمة محددة
-    Route::post('/task-details', \App\Http\Controllers\Api\TaskDetailsController::class); // عرض تفاصيل المهمة ومراحلها
+    Route::post('/task-details', [\App\Http\Controllers\Api\TaskController::class, 'taskDetails']); // عرض تفاصيل المهمة ومراحلها
 
     // Packages & Subscriptions - الباقات والاشتراكات
     Route::get('/packages', [PackageController::class, 'index']); // عرض الباقات المدفوعة

@@ -28,6 +28,8 @@ class TaskDetailsResource extends JsonResource
             'created_at' => $this->created_at->format('Y-m-d H:i:s'),
             'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
             'total_stages' => $this->total_stages,
+            'stages_count' => $this->whenLoaded('stages', fn() => $this->stages->count(), $this->total_stages),
+            'completed_stages' => $this->whenLoaded('stages', fn() => $this->stages->where('status', 'completed')->count()),
             'creator' => [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,

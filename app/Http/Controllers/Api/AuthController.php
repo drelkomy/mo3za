@@ -22,6 +22,35 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     /**
+     * حذف كاش المهام المرتبطة بالمستخدم
+     */
+    private function clearUserTasksCache(int $userId): void
+    {
+        // حذف كاش المهام التي أنشأها المستخدم
+        $patterns = [
+            "my_tasks_{$userId}_*",
+            "task_details_*_{$userId}"
+        ];
+        
+        foreach ($patterns as $pattern) {
+            $keys = Cache::get('cache_keys_' . $pattern, []);
+            foreach ($keys as $key) {
+                Cache::forget($key);
+            }
+            Cache::forget('cache_keys_' . $pattern);
+        }
+        
+        // حذف كاش المهام التي يشارك فيها المستخدم
+        $tasks = \App\Models\Task::where('creator_id', $userId)
+            ->orWhere('receiver_id', $userId)
+            ->select('id')
+            ->get();
+            
+        foreach ($tasks as $task) {
+            Cache::forget("task_details_{$task->id}_{$userId}");
+        }
+    }
+    /**
      * تسجيل الدخول وإنشاء رمز الوصول
      */
     public function login(LoginRequest $request)
@@ -155,6 +184,9 @@ class AuthController extends Controller
         // تنظيف cache عند تحديث البروفايل
         Cache::forget('user_me_' . $user->id);
         Cache::forget('user_profile_' . $user->id);
+        
+        // حذف كاش المهام المرتبطة بالمستخدم
+        $this->clearUserTasksCache($user->id);
         
         $user->load(['area', 'city']);
         return response()->json([

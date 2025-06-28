@@ -80,10 +80,16 @@ class TaskController extends Controller
     /**
      * إكمال مرحلة من مراحل المهمة
      */
-    public function completeStage(\App\Http\Requests\Api\CompleteStageRequest $request): JsonResponse
+    public function completeStage(\App\Http\Requests\Api\StageCompletionRequest $request): JsonResponse
     {
-        $stageId = $request->input('stage_id');
-        $stage = TaskStage::findOrFail($stageId);
+        // تحديد عدد الطلبات
+        $key = "complete_stage_" . auth()->id();
+        if (RateLimiter::tooManyAttempts($key, 30)) {
+            return response()->json(['message' => 'تم تجاوز الحد الأقصى للطلبات'], 429);
+        }
+        RateLimiter::hit($key, 60);
+        
+        $stage = TaskStage::with('task')->findOrFail($request->stage_id);
         $task = $stage->task;
         
         // التحقق من الصلاحيات
@@ -91,30 +97,133 @@ class TaskController extends Controller
             return response()->json(['message' => 'غير مصرح لك بإكمال هذه المرحلة'], 403);
         }
         
-        $stage->update([
-            'status' => 'completed',
-            'proof_notes' => $request->input('proof_notes', ''),
-            'proof_files' => $request->input('proof_files', []),
-            'end_date' => now()->toDateString(),
-            'completed_at' => now()
+        if ($stage->status === 'completed') {
+            return response()->json(['message' => 'المرحلة مكتملة بالفعل'], 422);
+        }
+        
+        \Log::info('Complete stage request:', [
+            'stage_id' => $request->stage_id,
+            'has_file' => $request->hasFile('proof_image'),
+            'content_type' => $request->header('Content-Type')
         ]);
         
-        // تحديث تقدم المهمة
-        $task->updateProgress();
-        
-        // مسح كاش المستخدمين المتأثرين فقط
-        $this->clearTaskCache($task->creator_id, $task->receiver_id);
-        
-        return response()->json([
-            'message' => 'تم إكمال المرحلة بنجاح',
-            'data' => new TaskResource($task->fresh(['stages']))
-        ]);
+        DB::beginTransaction();
+        try {
+            
+            $updateData = [
+                'status' => 'completed',
+                'completed_at' => now(),
+                'proof_notes' => $request->proof_notes
+            ];
+            
+            // معالجة الصورة
+            if ($request->hasFile('proof_image')) {
+                $file = $request->file('proof_image');
+                
+                // التحقق من صحة الملف
+                if (!$file->isValid()) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'الملف غير صالح',
+                        'error' => $file->getErrorMessage()
+                    ], 422);
+                }
+                
+                // التحقق من نوع الملف
+                $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+                if (!in_array($file->getMimeType(), $allowedTypes)) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'نوع الملف غير مدعوم'], 422);
+                }
+                
+                // التحقق من حجم الملف (2MB)
+                if ($file->getSize() > 2097152) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'حجم الملف يتجاوز 2 ميجابايت'], 422);
+                }
+                
+                try {
+                    $filename = 'stage_' . $request->stage_id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                    \Log::info('Attempting to store file:', ['filename' => $filename]);
+                    $path = $file->storeAs('stages', $filename, 'public');
+                    \Log::info('File stored:', ['path' => $path, 'full_path' => storage_path('app/public/' . $path)]);
+                    
+                    if (!$path) {
+                        throw new \Exception('فشل في حفظ الملف');
+                    }
+                    
+                    // التحقق من وجود الملف
+                    if (!file_exists(storage_path('app/public/' . $path))) {
+                        throw new \Exception('الملف لم يتم حفظه بشكل صحيح');
+                    }
+                    
+                    $fileData = [
+                        'path' => $path,
+                        'url' => asset('storage/' . $path),
+                        'name' => $file->getClientOriginalName(),
+                        'size' => $file->getSize(),
+                        'type' => $file->getMimeType(),
+                        'uploaded_at' => now()->toISOString()
+                    ];
+                    // ملاحظة: يجب التأكد من أن عمود proof_files في جدول task_stages من نوع JSON لتخزين البيانات بشكل صحيح
+                    $updateData['proof_files'] = json_encode($fileData);
+                    \Log::info('File data prepared:', $fileData);
+                    
+                } catch (\Exception $fileError) {
+                    DB::rollBack();
+                    \Log::error('خطأ في رفع الملف: ' . $fileError->getMessage());
+                    return response()->json(['message' => 'فشل في رفع الملف'], 500);
+                }
+            }
+            
+            \Log::info('Updating stage with data:', $updateData);
+            $updated = $stage->update($updateData);
+            \Log::info('Update result:', ['success' => $updated]);
+            
+            // تحديث مباشر لقاعدة البيانات إذا فشل الحفظ
+            if (isset($updateData['proof_files'])) {
+                DB::table('task_stages')
+                    ->where('id', $stage->id)
+                    ->update(['proof_files' => json_encode($updateData['proof_files'])]);
+                \Log::info('Direct DB update for proof_files completed');
+            }
+            
+            $freshStage = $stage->fresh();
+            \Log::info('Fresh stage proof_files:', ['proof_files' => $freshStage->proof_files]);
+            $task->updateProgress();
+            
+            DB::commit();
+            
+            // مسح الكاش
+            $this->clearTaskCache($task->creator_id, $task->receiver_id);
+            
+            $response = [
+                'message' => 'تم إكمال المرحلة بنجاح',
+                'data' => new \App\Http\Resources\StageResource($stage->fresh())
+            ];
+            
+            // إضافة معلومات الملف إذا تم رفعه
+            if ($request->hasFile('proof_image')) {
+                $response['file_uploaded'] = true;
+                $response['file_info'] = 'File uploaded successfully';
+            }
+            
+            return response()->json($response);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('خطأ في إكمال المرحلة: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'حدث خطأ أثناء إكمال المرحلة',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
     
     /**
      * إغلاق المهمة
      */
-    public function closeTask(\App\Http\Requests\Api\CloseTaskRequest $request): JsonResponse
+    public function closeTask(\App\Http\Requests\Api\TaskClosureRequest $request): JsonResponse
     {
         $taskId = $request->input('task_id');
         $task = Task::findOrFail($taskId);
@@ -124,12 +233,37 @@ class TaskController extends Controller
             return response()->json(['message' => 'غير مصرح لك بإغلاق هذه المهمة'], 403);
         }
         
-        $task->update([
+        // معالجة الصورة المرفوعة
+        $proofImage = null;
+        if ($request->hasFile('proof_image')) {
+            $file = $request->file('proof_image');
+            $path = $file->store('task_images', 'public');
+            $proofImage = [
+                'path' => $path,
+                'name' => $file->getClientOriginalName(),
+                'type' => $file->getClientMimeType(),
+                'size' => $file->getSize()
+            ];
+        }
+        
+        // تحضير البيانات للتحديث
+        $updateData = [
             'status' => 'completed',
-            'progress' => 100,
-            'proof_notes' => $request->input('proof_notes', ''),
-            'proof_files' => $request->input('proof_files', [])
-        ]);
+            'progress' => 100
+        ];
+        
+        // إضافة الملاحظات إذا تم توفيرها
+        if ($request->has('proof_notes')) {
+            $updateData['proof_notes'] = $request->input('proof_notes');
+        }
+        
+        // إضافة الصورة إذا تم رفعها
+        if ($proofImage) {
+            $updateData['proof_image'] = $proofImage;
+        }
+        
+        // تحديث المهمة
+        $task->update($updateData);
         
         // مسح كاش المستخدمين المتأثرين فقط
         $this->clearTaskCache($task->creator_id, $task->receiver_id);
@@ -137,6 +271,29 @@ class TaskController extends Controller
         return response()->json([
             'message' => 'تم إغلاق المهمة بنجاح',
             'data' => new TaskResource($task)
+        ]);
+    }
+    
+    /**
+     * تحديث due_date للمهمة
+     */
+    public function updateDueDate(\App\Http\Requests\Api\UpdateTaskDueDateRequest $request): JsonResponse
+    {
+        $task = Task::findOrFail($request->task_id);
+        
+        // التحقق من الصلاحيات - فقط منشئ المهمة
+        if ($task->creator_id !== auth()->id()) {
+            return response()->json(['message' => 'غير مصرح لك بتحديث تاريخ انتهاء هذه المهمة'], 403);
+        }
+        
+        $task->update(['due_date' => $request->due_date]);
+        
+        // مسح الكاش
+        $this->clearTaskCache($task->creator_id, $task->receiver_id);
+        
+        return response()->json([
+            'message' => 'تم تحديث تاريخ انتهاء المهمة بنجاح',
+            'data' => new TaskResource($task->fresh())
         ]);
     }
     
@@ -155,13 +312,18 @@ class TaskController extends Controller
         $tasksData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
             $query = Task::where('receiver_id', auth()->id())
                 ->with([
-                    'creator:id,name,email',
+                    'creator:id,name,email,avatar_url',
                     'stages' => function($q) {
                         $q->orderBy('stage_number');
                     }
                 ])
                 ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'due_date')
-                ->withCount('stages');
+                ->withCount([
+                    'stages as stages_count',
+                    'stages as completed_stages' => function($q) {
+                        $q->where('status', 'completed');
+                    }
+                ]);
             
             if ($status) {
                 $query->where('status', $status);
@@ -315,53 +477,36 @@ class TaskController extends Controller
     
     /**
      * عرض تفاصيل المهمة
-     * 
-     * تعرض رقم المهمة وتفاصيلها ومراحلها
      */
-    public function taskDetails(Request $request): JsonResponse
+    public function taskDetails(\App\Http\Requests\Api\TaskDetailsRequest $request): JsonResponse
     {
-        // التحقق من وجود معرف المهمة
-        $taskId = $request->query('task_id');
-        if (!$taskId) {
-            return response()->json(['message' => 'رقم المهمة مطلوب'], 422);
-        }
-        
         $userId = auth()->id();
+        $taskId = $request->task_id;
         
-        // تحديد مفتاح الكاش
+        // Rate limiting
+        $key = "task_details_{$userId}";
+        if (RateLimiter::tooManyAttempts($key, 60)) {
+            return response()->json(['message' => 'تم تجاوز الحد الأقصى للطلبات'], 429);
+        }
+        RateLimiter::hit($key, 60);
+        
         $cacheKey = "task_details_{$taskId}_{$userId}";
         
-        // تحديد عدد الطلبات
-        $key = "task_details_rate_{$userId}";
-        $maxAttempts = 60;
-        $decaySeconds = 60;
-        
-        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
-            return response()->json([
-                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
-            ], 429);
-        }
-        
-        RateLimiter::hit($key, $decaySeconds);
-        
-        // استخدام الكاش لتحسين الأداء
         try {
             $task = Cache::remember($cacheKey, 300, function () use ($taskId, $userId) {
                 $task = Task::with([
-                    'creator:id,name,email',
-                    'receiver:id,name,email',
+                    'creator:id,name,email,avatar_url',
+                    'receiver:id,name,email,avatar_url', 
                     'team:id,name',
-                    'stages' => function($q) {
-                        $q->orderBy('stage_number');
-                    }
+                    'stages' => fn($q) => $q->orderBy('stage_number')
+                ])->withCount([
+                    'stages as stages_count',
+                    'stages as completed_stages' => fn($q) => $q->where('status', 'completed')
                 ])->findOrFail($taskId);
                 
-                // التحقق من الصلاحيات - يجب أن يكون المستخدم منشئ المهمة أو مستلمها أو عضو في الفريق
+                // التحقق من الصلاحيات
                 if ($task->creator_id !== $userId && $task->receiver_id !== $userId) {
-                    // تحقق إذا كان المستخدم عضو في الفريق
-                    $isTeamMember = $task->team && $task->team->members()->where('user_id', $userId)->exists();
-                    
-                    if (!$isTeamMember) {
+                    if (!$task->team_id || !$task->team->members()->where('user_id', $userId)->exists()) {
                         abort(403, 'غير مصرح لك بعرض هذه المهمة');
                     }
                 }

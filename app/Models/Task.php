@@ -71,6 +71,31 @@ class Task extends Model implements HasMedia
         // Order by stage_number should be handled at usage point with stages()->orderBy('stage_number')->get();
     }
 
+    /**
+     * حساب due_date تلقائياً بناء على start_date و duration_days
+     */
+    public function calculateDueDate(): void
+    {
+        if ($this->start_date && $this->duration_days && !$this->due_date) {
+            $this->due_date = $this->start_date->addDays($this->duration_days);
+        }
+    }
+    
+    /**
+     * تحديث due_date للمراحل
+     */
+    public function updateStagesDueDate(): void
+    {
+        if ($this->due_date && $this->total_stages > 0) {
+            $daysPerStage = $this->duration_days / $this->total_stages;
+            
+            $this->stages()->orderBy('stage_number')->get()->each(function ($stage, $index) use ($daysPerStage) {
+                $stageDueDate = $this->start_date->addDays(($index + 1) * $daysPerStage);
+                $stage->update(['due_date' => $stageDueDate]);
+            });
+        }
+    }
+
     public function updateProgress(): void
     {
         if ($this->total_stages > 0) {

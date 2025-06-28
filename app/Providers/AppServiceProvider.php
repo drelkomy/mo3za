@@ -14,6 +14,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // تسجيل Task Observer
+        \App\Models\Task::observe(\App\Observers\TaskObserver::class);
+        
         // Fix Composer autoloader compatibility issue
         if (app()->environment('production')) {
             View::composer('*', function ($view) {

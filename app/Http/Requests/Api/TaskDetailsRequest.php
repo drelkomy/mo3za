@@ -8,13 +8,13 @@ class TaskDetailsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return auth()->check();
     }
 
     public function rules(): array
     {
         return [
-            'task_id' => 'required|exists:tasks,id',
+            'task_id' => 'required|integer|exists:tasks,id'
         ];
     }
 
@@ -22,7 +22,7 @@ class TaskDetailsRequest extends FormRequest
     {
         return [
             'task_id.required' => 'رقم المهمة مطلوب',
-            'task_id.exists' => 'رقم المهمة غير صحيح',
+            'task_id.exists' => 'المهمة غير موجودة'
         ];
     }
 }

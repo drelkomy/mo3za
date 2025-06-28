@@ -14,7 +14,8 @@ class TaskStage extends Model implements HasMedia
     use HasFactory, InteractsWithMedia;
 
     protected $fillable = [
-        'task_id', 'stage_number', 'title', 'description', 'status', 'completed_at', 'due_date', 'notes'
+        'task_id', 'stage_number', 'title', 'description', 'status', 'completed_at', 'due_date', 'notes',
+        'proof_notes', 'proof_files'
     ];
 
     protected $casts = [
@@ -22,6 +23,7 @@ class TaskStage extends Model implements HasMedia
         'completed_at' => 'datetime',
         'due_date' => 'date',
         'status' => 'string',
+        'proof_files' => 'json'
     ];
 
     public function task(): BelongsTo

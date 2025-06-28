@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\TaskDetailsRequest;
-use App\Http\Resources\Api\TaskDetailsResource;
+use App\Http\Resources\TaskDetailsResource;
 use App\Models\Task;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;

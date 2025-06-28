@@ -16,8 +16,7 @@ class CompleteStageRequest extends FormRequest
         return [
             'stage_id' => 'required|exists:task_stages,id',
             'proof_notes' => 'required|string|max:1000',
-            'proof_files' => 'nullable|array|max:5',
-            'proof_files.*' => 'file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240', // 10MB
+            'proof_image' => 'nullable|file|image|mimes:jpg,jpeg,png|max:5120', // 5MB max, only images
         ];
     }
 
@@ -28,9 +27,9 @@ class CompleteStageRequest extends FormRequest
             'stage_id.exists' => 'المرحلة غير موجودة',
             'proof_notes.required' => 'ملاحظات الإثبات مطلوبة',
             'proof_notes.max' => 'ملاحظات الإثبات يجب ألا تتجاوز 1000 حرف',
-            'proof_files.max' => 'لا يمكن رفع أكثر من 5 ملفات',
-            'proof_files.*.mimes' => 'نوع الملف غير مدعوم',
-            'proof_files.*.max' => 'حجم الملف يجب ألا يتجاوز 10 ميجابايت',
+            'proof_image.image' => 'يجب أن يكون الملف صورة',
+            'proof_image.mimes' => 'يجب أن تكون الصورة من نوع jpg أو jpeg أو png',
+            'proof_image.max' => 'حجم الصورة يجب ألا يتجاوز 5 ميجابايت',
         ];
     }
 }
