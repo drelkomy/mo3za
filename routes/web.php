@@ -121,3 +121,5 @@ Route::get('/privacy-policy', function () {
 Route::get('/terms-and-conditions', function () {
     return view('terms-and-conditions');
 })->name('terms.conditions')->middleware(['throttle:60,1']);
+
+// مسار تفاصيل المهمة

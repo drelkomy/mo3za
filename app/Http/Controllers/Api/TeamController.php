@@ -27,61 +27,23 @@ use Illuminate\Support\Facades\RateLimiter;
 class TeamController extends Controller
 {
     /**
-     * مسح كاش الفريق والأعضاء
+     * مسح كاش المستخدم الحالي فقط
      */
-    private function clearTeamCache(Team $team): void
+    private function clearUserCache(int $userId): void
     {
-        // مسح كاش الفريق
-        Cache::forget("my_team_" . $team->owner_id);
-        Cache::forget("user_team_" . $team->owner_id);
+        Cache::forget("my_team_" . $userId);
+        Cache::forget("user_team_" . $userId);
+        Cache::forget("team_members_" . $userId);
         
-        // مسح كاش المهام
-        for ($i = 1; $i <= 10; $i++) { // زيادة عدد الصفحات المحذوفة
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_in_progress");
-            
-            // مسح كاش الإحصائيات الجديد
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_tasks_per_page_10");
-        }
-        
-        // مسح كاش المكافآت لجميع الحالات الممكنة
-        $statuses = ['', 'pending', 'delivered', 'cancelled'];
-        $perPages = [10, 20, 30, 40, 50];
-        for ($i = 1; $i <= 5; $i++) {
-            foreach ($statuses as $status) {
-                foreach ($perPages as $perPage) {
-                    Cache::forget("team_rewards_{$team->id}_page_{$i}_per_{$perPage}_status_{$status}");
-                }
-            }
-        }
-        
-        // مسح كاش إحصائيات الأعضاء
-        $memberIds = $team->members()->pluck('user_id')->push($team->owner_id)->toArray();
-        foreach ($memberIds as $memberId) {
-            Cache::forget("my_team_" . $memberId);
-            Cache::forget("user_team_" . $memberId);
-            
-            // مسح كاش إحصائيات مهام العضو
-            $this->clearMemberTasksCache($team->id, $memberId);
-            
-            // مسح كاش مهام العضو
-            Cache::forget("my_tasks_" . $memberId);
-        }
-    }
-    
-    /**
-     * مسح كاش مهام عضو محدد
-     */
-    private function clearMemberTasksCache($teamId, $memberId): void
-    {
-        // حذف الكاش لعدة صفحات مثلاً أول 3 صفحات الأكثر عرضًا
-        foreach (range(1, 3) as $page) {
-            foreach ([10, 20, 50] as $perPage) {
-                foreach (['pending', 'in_progress', 'completed', ''] as $status) {
-                    $statusKey = $status ?: 'all';
-                    Cache::forget("member_task_stats_{$teamId}_{$memberId}_page_{$page}_per_{$perPage}_status_{$statusKey}");
+        // مسح مفاتيح المهام الأساسية
+        foreach (['all', 'pending', 'completed', 'in_progress'] as $status) {
+            for ($page = 1; $page <= 3; $page++) {
+                foreach ([10, 20, 50] as $perPage) {
+                    foreach ([true, false] as $stages) {
+                        foreach ([true, false] as $counts) {
+                            Cache::forget("team_tasks_{$userId}_page_{$page}_per_{$perPage}_status_{$status}_stages_{$stages}_counts_{$counts}_q_none");
+                        }
+                    }
                 }
             }
         }
@@ -92,33 +54,35 @@ class TeamController extends Controller
      */
     private function clearTaskCache(int $taskId, int $teamId, int $receiverId): void
     {
-        // مسح كاش المهام
-        for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_in_progress");
+        // مسح كاش مهام الفريق
+        foreach (['all', 'pending', 'completed', 'in_progress'] as $status) {
+            for ($page = 1; $page <= 3; $page++) {
+                foreach ([10, 20, 50] as $perPage) {
+                    Cache::forget("team_tasks_{$teamId}_page_{$page}_per_{$perPage}_status_{$status}");
+                }
+            }
         }
         
         // مسح كاش مهام المستلم
-        Cache::forget("my_tasks_" . $receiverId);
-        
-        // مسح كاش إحصائيات المستلم
-        $this->clearMemberTasksCache($teamId, $receiverId);
-        
-        // مسح كاش إحصائيات الفريق
-        for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_10");
-        }
+        Cache::forget("member_task_stats_{$teamId}_{$receiverId}");
     }
+    
+
+    
+
     public function create(CreateTeamRequest $request): JsonResponse
     {
+        $userId = auth()->id();
+        
         $team = Team::create([
             'name' => $request->input('name'),
-            'owner_id' => auth()->id()
+            'owner_id' => $userId
         ]);
         
         $team->load('owner');
+        
+        // مسح كاش المستخدم
+        $this->clearUserCache($userId);
         
         return response()->json([
             'message' => 'تم إنشاء الفريق بنجاح',
@@ -128,20 +92,26 @@ class TeamController extends Controller
     
     public function myTeam(\App\Http\Requests\Api\MyTeamRequest $request): JsonResponse
     {
-        $team = Team::where('owner_id', auth()->id())
-            ->with([
-                'owner:id,name,email',
-                'members:id,name,email,avatar_url',
-                'tasks' => function($query) {
-                    $query->select('id', 'team_id', 'title', 'description', 'status', 'receiver_id', 'progress', 'created_at', 'due_date')
-                          ->with(['receiver:id,name', 'creator:id,name', 'stages:id,task_id,title,status'])
-                          ->orderBy('created_at', 'desc');
-                }
-            ])
-            ->select('id', 'name', 'owner_id', 'created_at')
-            ->first();
+        $userId = auth()->id();
+        $cacheKey = "my_team_" . $userId;
+        
+        $teamData = Cache::remember($cacheKey, 300, function () use ($userId) {
+            return Team::where('owner_id', $userId)
+                ->with([
+                    'owner:id,name,email',
+                    'members:id,name,email,avatar_url',
+                    'tasks' => function($query) use ($userId) {
+                        $query->where('creator_id', $userId)
+                              ->select('id', 'team_id', 'title', 'description', 'status', 'receiver_id', 'progress', 'created_at', 'due_date')
+                              ->with(['receiver:id,name', 'creator:id,name', 'stages'])
+                              ->orderBy('created_at', 'desc');
+                    }
+                ])
+                ->select('id', 'name', 'owner_id', 'created_at')
+                ->first();
+        });
             
-        if (!$team) {
+        if (!$teamData) {
             return response()->json([
                 'message' => 'لا تملك فريقاً',
                 'data' => [
@@ -152,10 +122,8 @@ class TeamController extends Controller
         
         return response()->json([
             'message' => 'تم جلب فريقك بنجاح',
-            'data' => new \App\Http\Resources\MyTeamResource($team)
-        ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
-         ->header('Pragma', 'no-cache')
-         ->header('Expires', '0');
+            'data' => new \App\Http\Resources\MyTeamResource($teamData)
+        ])->setMaxAge(300)->setPublic();
     }
     
     public function updateName(UpdateTeamNameRequest $request): JsonResponse
@@ -164,8 +132,8 @@ class TeamController extends Controller
         
         $team->update(['name' => $request->input('name')]);
         
-        // مسح الكاش المتعلق بالفريق
-        $this->clearTeamCache($team);
+        // مسح كاش المستخدم الحالي فقط
+        $this->clearUserCache(auth()->id());
         
         $team = Team::where('id', $team->id)->with('owner:id,name,email,avatar_url')->first();
         
@@ -189,12 +157,9 @@ class TeamController extends Controller
         
         $team->members()->detach($memberId);
         
-        // مسح الكاش المتعلق بالفريق والعضو
-        $this->clearTeamCache($team);
-        
-        // مسح كاش العضو المحذوف بشكل خاص
-        Cache::forget("my_team_" . $memberId);
-        Cache::forget("user_team_" . $memberId);
+        // مسح كاش المستخدم الحالي والعضو المحذوف
+        $this->clearUserCache(auth()->id());
+        $this->clearUserCache($memberId);
         
         return response()->json([
             'message' => 'تم إزالة العضو من فريقك بنجاح'
@@ -206,11 +171,11 @@ class TeamController extends Controller
      */
     public function getTeamTasks(\App\Http\Requests\Api\TeamTasksRequest $request): JsonResponse
     {
-        // التحقق من وجود فريق للمستخدم
-        $team = $this->getUserTeam();
+        $userId = auth()->id();
+        $team = Team::where('owner_id', $userId)->first();
         if (!$team) {
             return response()->json([
-                'message' => 'لا تملك فريقاً أو لست عضوًا في أي فريق. يرجى إنشاء فريق أو الانضمام إلى فريق لعرض المهام.',
+                'message' => 'لا تملك فريقاً. يرجى إنشاء فريق لعرض المهام.',
                 'data' => null
             ], 404);
         }
@@ -222,10 +187,13 @@ class TeamController extends Controller
         $withCounts = $request->boolean('with_counts', true);
         $searchQuery = $request->input('q');
         
-        $cacheKey = "team_tasks_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}_stages_{$withStages}_counts_{$withCounts}_q_{$searchQuery}";
+        $statusKey = $status ?: 'all';
+        $searchKey = $searchQuery ? md5($searchQuery) : 'none';
+        $cacheKey = "team_tasks_{$userId}_page_{$page}_per_{$perPage}_status_{$statusKey}_stages_{$withStages}_counts_{$withCounts}_q_{$searchKey}";
         
-        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
+        $tasksData = Cache::remember($cacheKey, 300, function () use ($team, $userId, $page, $perPage, $status, $withStages, $withCounts, $searchQuery) {
             $baseQuery = Task::where('team_id', $team->id)
+                ->where('creator_id', $userId)
                 ->select('id', 'title', 'description', 'status', 'progress', 'receiver_id', 'creator_id', 'team_id', 'created_at', 'start_date', 'due_date', 'duration_days', 'priority', 'reward_type', 'reward_amount', 'reward_description');
             
             // تحميل العلاقات بشكل انتقائي
@@ -435,15 +403,32 @@ class TeamController extends Controller
             ], 404);
         }
         
-        // التحقق من أن المستلم عضو في الفريق
+        // التحقق من أن المستلم عضو في الفريق (إذا تم توفيره)
         $receiverId = $request->input('receiver_id');
-        $isMember = $team->members()->where('user_id', $receiverId)->exists() || $team->owner_id == $receiverId;
-        
-        if (!$isMember) {
-            return response()->json([
-                'message' => 'المستلم ليس عضواً في الفريق',
-                'data' => null
-            ], 400);
+        if ($receiverId) {
+            $isMember = false;
+            
+            // تحقق من أن العضو هو مالك الفريق
+            if ($team->owner_id == $receiverId) {
+                $isMember = true;
+            } else {
+                // تحقق من أن العضو موجود في الفريق
+                $memberExists = DB::table('team_members')
+                    ->where('team_id', $team->id)
+                    ->where('user_id', $receiverId)
+                    ->exists();
+                    
+                if ($memberExists) {
+                    $isMember = true;
+                }
+            }
+            
+            if (!$isMember) {
+                return response()->json([
+                    'message' => 'المستلم ليس عضواً في الفريق',
+                    'data' => null
+                ], 400);
+            }
         }
         
         // التحقق من إمكانية إنشاء مهمة جديدة (الاشتراك)
@@ -458,25 +443,70 @@ class TeamController extends Controller
         // يمكن تنفيذ هذا المنطق في مكان آخر مثل SubscriptionService أو مراقب الاشتراكات
         
         try {
+            // تسجيل بيانات الطلب للتشخيص
+            \Illuminate\Support\Facades\Log::info('Creating task', [
+                'user_id' => auth()->id(),
+                'team_id' => $team->id,
+                'receiver_id' => $receiverId,
+                'has_selected_members' => $request->has('selected_members'),
+                'selected_members' => $request->input('selected_members')
+            ]);
+            
             // بدء معاملة قاعدة البيانات
             \Illuminate\Support\Facades\DB::beginTransaction();
             
-            // إذا كانت المهمة متعددة، قم بإنشاء مهمة منفصلة لكل شخص
-            $receiverIds = [$receiverId];
-            if ($request->input('is_multiple') && !empty($request->input('selected_members'))) {
-                $selectedMembers = is_string($request->input('selected_members')) 
-                    ? json_decode($request->input('selected_members'), true) 
-                    : $request->input('selected_members');
+            // تحديد المستلمين للمهمة
+            $receiverIds = [];
+            
+            // إضافة المستلم الرئيسي إذا تم توفيره
+            if ($receiverId) {
+                $receiverIds[] = $receiverId;
+            }
+            
+            // إذا تم توفير الأعضاء المحددين
+            if ($request->has('selected_members')) {
+                $selectedMembers = $request->input('selected_members');
                 
+                // معالجة البيانات إذا كانت سلسلة نصية JSON
+                if (is_string($selectedMembers)) {
+                    $selectedMembers = json_decode($selectedMembers, true);
+                }
+                
+                // معالجة البيانات إذا كانت مصفوفة
                 if (is_array($selectedMembers)) {
                     foreach ($selectedMembers as $memberId) {
                         // تحقق من أن العضو موجود في الفريق ولم يتم إضافته بالفعل
-                        $isMember = $team->members()->where('user_id', $memberId)->exists() || $team->owner_id == $memberId;
+                        $isMember = false;
+                        
+                        // تحقق من أن العضو هو مالك الفريق
+                        if ($team->owner_id == $memberId) {
+                            $isMember = true;
+                        } else {
+                            // تحقق من أن العضو موجود في الفريق
+                            $memberExists = DB::table('team_members')
+                                ->where('team_id', $team->id)
+                                ->where('user_id', $memberId)
+                                ->exists();
+                                
+                            if ($memberExists) {
+                                $isMember = true;
+                            }
+                        }
+                        
+                        // إضافة العضو إلى قائمة المستلمين
                         if ($isMember && !in_array($memberId, $receiverIds)) {
                             $receiverIds[] = $memberId;
                         }
                     }
                 }
+            }
+            
+            // التحقق من وجود مستلم واحد على الأقل
+            if (empty($receiverIds)) {
+                return response()->json([
+                    'message' => 'يجب تحديد مستلم واحد على الأقل للمهمة',
+                    'data' => null
+                ], 400);
             }
 
             $tasks = [];
@@ -499,8 +529,8 @@ class TeamController extends Controller
                     'reward_amount' => $request->input('reward_amount'),
                     'reward_type' => $request->input('reward_type', 'cash'),
                     'reward_description' => $request->input('reward_description'),
-                    'is_multiple' => $request->input('is_multiple', false),
-                    'selected_members' => $request->input('is_multiple') ? $request->input('selected_members', []) : null,
+                    'is_multiple' => count($receiverIds) > 1,
+                    'selected_members' => count($receiverIds) > 1 ? json_encode($receiverIds) : null,
                     'subscription_status' => $subscriptionStatus, // تخزين حالة الاشتراك مع المهمة بناءً على التحقق المباشر
                 ]);
                 
@@ -559,24 +589,12 @@ class TeamController extends Controller
                 }
                 
                 
+                // مسح كاش المهام
                 $this->clearTaskCache($task->id, $team->id, $rid);
                 // مسح كاش إحصائيات مهام الأعضاء
-                for ($i = 1; $i <= 10; $i++) {
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_20");
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_30");
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_40");
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_50");
-                }
-                // مسح كاش مهام الفريق لجميع الصفحات والحالات
-                $perPages = [10, 20, 30, 40, 50];
-                $statuses = ['', 'completed', 'pending', 'in_progress'];
-                for ($i = 1; $i <= 10; $i++) {
-                    foreach ($perPages as $per) {
-                        foreach ($statuses as $status) {
-                            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_{$per}_status_{$status}");
-                        }
-                    }
+                Cache::forget("team_members_task_stats_{$team->id}_all");
+                foreach (['all', 'pending', 'completed', 'in_progress'] as $cacheStatus) {
+                    Cache::forget("team_members_task_stats_{$team->id}_all_status_{$cacheStatus}");
                 }
                 
                 // تحميل العلاقات

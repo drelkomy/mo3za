@@ -16,7 +16,7 @@ class CreateTaskRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
-            'receiver_id' => ['required', 'integer', 'exists:users,id'],
+            'receiver_id' => ['required_without:selected_members', 'nullable', 'integer', 'exists:users,id'],
             'due_date' => ['nullable', 'date', 'after:today'],
             'priority' => ['nullable', 'string', 'in:urgent,normal,high,medium,low'],
             'total_stages' => ['nullable', 'integer', 'min:1', 'max:10'],
@@ -26,8 +26,7 @@ class CreateTaskRequest extends FormRequest
             'reward_amount' => ['nullable', 'numeric', 'min:0'],
             'reward_type' => ['nullable', 'string', 'in:cash,other'],
             'reward_description' => ['nullable', 'string'],
-            'is_multiple' => ['nullable', 'boolean'],
-            'selected_members' => ['nullable', 'array', 'required_if:is_multiple,true'],
+            'selected_members' => ['nullable', 'sometimes', 'required_without:receiver_id'],
             'selected_members.*' => ['integer', 'exists:users,id'],
         ];
     }
@@ -37,13 +36,13 @@ class CreateTaskRequest extends FormRequest
         return [
             'title.required' => 'عنوان المهمة مطلوب',
             'description.required' => 'وصف المهمة مطلوب',
-            'receiver_id.required' => 'معرف المستلم مطلوب',
+            'receiver_id.required_without' => 'يجب تحديد مستلم أو مجموعة مستلمين',
             'receiver_id.exists' => 'المستلم غير موجود',
             'priority.in' => 'الأولوية يجب أن تكون إما normal، urgent، high، medium أو low',
             'due_date.after' => 'تاريخ الاستحقاق يجب أن يكون بعد اليوم',
             'reward_amount.min' => 'قيمة المكافأة يجب أن تكون أكبر من أو تساوي صفر',
             'reward_type.in' => 'نوع المكافأة يجب أن يكون إما cash أو other',
-            'selected_members.required_if' => 'يجب تحديد الأعضاء المشاركين للمهمة المتعددة',
+            'selected_members.required_without' => 'يجب تحديد مستلم أو مجموعة مستلمين',
             'selected_members.*.exists' => 'أحد الأعضاء المحددين غير موجود',
         ];
     }

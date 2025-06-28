@@ -14,10 +14,10 @@ class TaskStageResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'status' => $this->status,
-            'order' => $this->order,
+            'stage_number' => $this->stage_number,
             'completed_at' => $this->completed_at ? $this->completed_at->format('Y-m-d H:i:s') : null,
-            'proof_notes' => $this->proof_notes,
-            'proof_files' => $this->proof_files,
+            'proof_notes' => $this->proof_notes ?? null,
+            'proof_files' => $this->proof_files ?? null,
             'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
             'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
         ];

@@ -58,7 +58,10 @@ class UserResource extends Resource
                             ->avatar()
                             ->image()
                             ->directory('avatars')
-                            ->columnSpanFull(),
+                            ->disk('public')
+                            ->visibility('public')
+                            ->columnSpanFull()
+                            ->default(fn ($record) => $record ? $record->avatar_url : null),
                         Forms\Components\TextInput::make('name')
                             ->label('الاسم')
                             ->required()
@@ -136,10 +139,10 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\ImageColumn::make('avatar')
+                Tables\Columns\ImageColumn::make('avatar_url')
                     ->label('الصورة')
                     ->circular()
-                    ->getStateUsing(fn (User $record): ?string => $record->getFilamentAvatarUrl()),
+                    ->disk('public'),
                 Tables\Columns\TextColumn::make('name')
                     ->label('الاسم')
                     ->searchable(),

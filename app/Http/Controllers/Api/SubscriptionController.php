@@ -15,15 +15,20 @@ class SubscriptionController extends Controller
 {
     public function index(): JsonResponse
     {
-        $subscriptions = auth()->user()->subscriptions()
-            ->with('package')
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $userId = auth()->id();
+        $cacheKey = "user_subscriptions_" . $userId;
+        
+        $subscriptions = Cache::remember($cacheKey, 300, function () use ($userId) {
+            return auth()->user()->subscriptions()
+                ->with('package')
+                ->orderBy('created_at', 'desc')
+                ->get();
+        });
 
         return response()->json([
             'message' => 'تم جلب الاشتراكات بنجاح',
             'data' => \App\Http\Resources\SubscriptionResource::collection($subscriptions)
-        ]);
+        ])->setMaxAge(300)->setPublic();
     }
 
     public function cancel(Request $request): JsonResponse
@@ -32,6 +37,7 @@ class SubscriptionController extends Controller
             'subscription_id' => 'required|exists:subscriptions,id'
         ]);
 
+        $userId = auth()->id();
         $subscription = auth()->user()->subscriptions()
             ->where('id', $request->subscription_id)
             ->first();
@@ -41,43 +47,57 @@ class SubscriptionController extends Controller
         }
 
         $subscription->update(['status' => 'cancelled']);
+        
+        // مسح كاش المستخدم
+        Cache::forget("user_subscriptions_" . $userId);
+        Cache::forget('user_subscription_' . $userId);
 
         return response()->json(['message' => 'تم إلغاء الاشتراك بنجاح']);
     }
 
     public function trialStatus(): JsonResponse
     {
-        $user = auth()->user();
+        $userId = auth()->id();
+        $cacheKey = "trial_status_" . $userId;
         
-        // التحقق من وجود اشتراك تجريبي سابق
-        $trialSubscription = $user->subscriptions()
-            ->whereHas('package', function($q) {
-                $q->where('is_trial', true);
-            })
-            ->first();
-        
-        $hasTrial = $trialSubscription !== null;
-        $isTrialActive = $trialSubscription && $trialSubscription->status === 'active' && 
-                       $trialSubscription->end_date && $trialSubscription->end_date->isFuture();
-        
-        $trialData = (object) [
-            'has_trial' => $hasTrial,
-            'is_trial_active' => $isTrialActive,
-            'trial_subscription' => $trialSubscription,
-        ];
+        $trialData = Cache::remember($cacheKey, 300, function () use ($userId) {
+            $user = auth()->user();
+            
+            // التحقق من وجود اشتراك تجريبي سابق
+            $trialSubscription = $user->subscriptions()
+                ->whereHas('package', function($q) {
+                    $q->where('is_trial', true);
+                })
+                ->first();
+            
+            $hasTrial = $trialSubscription !== null;
+            $isTrialActive = $trialSubscription && $trialSubscription->status === 'active' && 
+                           $trialSubscription->end_date && $trialSubscription->end_date->isFuture();
+            
+            return (object) [
+                'has_trial' => $hasTrial,
+                'is_trial_active' => $isTrialActive,
+                'trial_subscription' => $trialSubscription,
+            ];
+        });
         
         return response()->json([
             'message' => 'تم جلب حالة الاشتراك التجريبي بنجاح',
             'data' => new TrialStatusResource($trialData)
-        ]);
+        ])->setMaxAge(300)->setPublic();
     }
 
     public function currentSubscription(Request $request): JsonResponse
     {
-        $subscription = auth()->user()->subscriptions()
-            ->with('package')
-            ->orderBy('created_at', 'desc')
-            ->first();
+        $userId = auth()->id();
+        $cacheKey = "current_subscription_" . $userId;
+        
+        $subscription = Cache::remember($cacheKey, 300, function () {
+            return auth()->user()->subscriptions()
+                ->with('package')
+                ->orderBy('created_at', 'desc')
+                ->first();
+        });
         
         if (!$subscription) {
             return response()->json([
@@ -91,7 +111,7 @@ class SubscriptionController extends Controller
             'message' => 'تم جلب اشتراكك الحالي بنجاح',
             'data' => new \App\Http\Resources\CurrentSubscriptionResource($subscription),
             'has_subscription' => true
-        ]);
+        ])->setMaxAge(300)->setPublic();
     }
 
     public function subscriptionHistory(): JsonResponse
@@ -160,7 +180,13 @@ class SubscriptionController extends Controller
                 'start_date' => now(),
                 'end_date' => now()->addDays($package->duration_days)
             ]);
+            
+            // مسح كاش المستخدم
             Cache::forget('user_subscription_' . $user->id);
+            Cache::forget('user_subscriptions_' . $user->id);
+            Cache::forget('current_subscription_' . $user->id);
+            Cache::forget('trial_status_' . $user->id);
+            
             return response()->json([
                 'message' => 'تم تفعيل الباقة التجريبية بنجاح',
                 'subscription_id' => $subscription->id,

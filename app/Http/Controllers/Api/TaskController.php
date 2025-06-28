@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TaskResource;
+use App\Http\Resources\TaskDetailsResource;
 use App\Models\Task;
 use App\Models\Team;
 use App\Models\TaskStage;
@@ -17,78 +18,36 @@ use App\Models\Reward;
 class TaskController extends Controller
 {
     /**
-     * مسح كاش الفريق والأعضاء
+     * مسح كاش المستخدم الحالي فقط
      */
-    private function clearTeamCache(Team $team): void
+    private function clearUserCache(int $userId): void
     {
-        // مسح كاش الفريق
-        Cache::forget("my_team_" . $team->owner_id);
-        Cache::forget("user_team_" . $team->owner_id);
+        $patterns = [
+            "my_tasks_{$userId}_*",
+            "my_rewards_data_{$userId}_*"
+        ];
         
-        // مسح كاش المهام
-        for ($i = 1; $i <= 5; $i++) { // مسح أول 5 صفحات
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_in_progress");
-        }
-        
-        // مسح كاش المكافآت
-        for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_rewards_{$team->id}_page_{$i}_per_10_status_");
-        }
-        
-        // مسح كاش إحصائيات الأعضاء
-        $memberIds = $team->members()->pluck('user_id')->toArray();
-        foreach ($memberIds as $memberId) {
-            Cache::forget("my_team_" . $memberId);
-            Cache::forget("user_team_" . $memberId);
-            
-            // مسح كاش إحصائيات مهام العضو
-            for ($i = 1; $i <= 3; $i++) {
-                Cache::forget("member_task_stats_{$team->id}_{$memberId}_page_{$i}");
+        foreach ($patterns as $pattern) {
+            $baseKey = str_replace('_*', '', $pattern);
+            // مسح المفاتيح الأساسية المعروفة
+            foreach (['all', 'pending', 'completed', 'in_progress'] as $status) {
+                for ($page = 1; $page <= 3; $page++) {
+                    foreach ([10, 20, 50] as $perPage) {
+                        Cache::forget("{$baseKey}_page_{$page}_per_{$perPage}_status_{$status}");
+                    }
+                }
             }
-            
-            // مسح كاش مهام العضو
-            Cache::forget("my_tasks_" . $memberId);
-        }
-        
-        // مسح كاش إحصائيات الفريق
-        for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_10");
         }
     }
     
     /**
-     * مسح كاش المهمة
+     * مسح كاش المهمة للمستخدمين المتأثرين فقط
      */
-    private function clearTaskCache(int $taskId, int $teamId, int $receiverId): void
+    private function clearTaskCache(int $creatorId, int $receiverId): void
     {
-        // مسح كاش المهام
-        for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_in_progress");
-        }
-        
-        // مسح كاش مهام المستلم
-        Cache::forget("my_tasks_" . $receiverId);
-        
-        // مسح كاش إحصائيات المستلم
-        for ($i = 1; $i <= 3; $i++) {
-            Cache::forget("member_task_stats_{$teamId}_{$receiverId}_page_{$i}");
-        }
-        
-        // مسح كاش إحصائيات الفريق لجميع الحالات الممكنة
-        $statuses = ['', 'pending', 'in_progress', 'completed'];
-        $perPages = [10, 20, 30, 40, 50];
-        for ($i = 1; $i <= 3; $i++) {
-            foreach ($statuses as $status) {
-                foreach ($perPages as $perPage) {
-                    Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_{$perPage}_status_{$status}");
-                }
-            }
+        $this->clearUserCache($creatorId);
+        if ($receiverId !== $creatorId) {
+            $this->clearUserCache($receiverId);
         }
     }
     
@@ -109,26 +68,8 @@ class TaskController extends Controller
             'progress' => $status === 'completed' ? 100 : ($status === 'in_progress' ? 50 : 0)
         ]);
         
-        // مسح الكاش المتعلق بالمهمة
-        if ($task->team_id) {
-            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
-            $perPages = [10, 20, 30, 40, 50];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($perPages as $per) {
-                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
-                }
-            }
-            // مسح كاش مهام الفريق لجميع الصفحات والحالات
-            $statuses = ['', 'completed', 'pending', 'in_progress'];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($statuses as $status) {
-                    foreach ($perPages as $per) {
-                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
-                    }
-                }
-            }
-        }
+        // مسح كاش المستخدمين المتأثرين فقط
+        $this->clearTaskCache($task->creator_id, $task->receiver_id);
         
         return response()->json([
             'message' => 'تم تحديث حالة المهمة بنجاح',
@@ -161,26 +102,8 @@ class TaskController extends Controller
         // تحديث تقدم المهمة
         $task->updateProgress();
         
-        // مسح الكاش المتعلق بالمهمة
-        if ($task->team_id) {
-            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
-            $perPages = [10, 20, 30, 40, 50];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($perPages as $per) {
-                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
-                }
-            }
-            // مسح كاش مهام الفريق لجميع الصفحات والحالات
-            $statuses = ['', 'completed', 'pending', 'in_progress'];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($statuses as $status) {
-                    foreach ($perPages as $per) {
-                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
-                    }
-                }
-            }
-        }
+        // مسح كاش المستخدمين المتأثرين فقط
+        $this->clearTaskCache($task->creator_id, $task->receiver_id);
         
         return response()->json([
             'message' => 'تم إكمال المرحلة بنجاح',
@@ -208,26 +131,8 @@ class TaskController extends Controller
             'proof_files' => $request->input('proof_files', [])
         ]);
         
-        // مسح الكاش المتعلق بالمهمة
-        if ($task->team_id) {
-            $this->clearTaskCache($task->id, $task->team_id, $task->receiver_id);
-            // مسح كاش إحصائيات مهام الأعضاء لجميع الصفحات وأعداد العناصر لكل صفحة
-            $perPages = [10, 20, 30, 40, 50];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($perPages as $per) {
-                    Cache::forget("team_members_task_stats_{$task->team_id}_page_{$i}_per_{$per}");
-                }
-            }
-            // مسح كاش مهام الفريق لجميع الصفحات والحالات
-            $statuses = ['', 'completed', 'pending', 'in_progress'];
-            for ($i = 1; $i <= 10; $i++) {
-                foreach ($statuses as $status) {
-                    foreach ($perPages as $per) {
-                        Cache::forget("team_tasks_{$task->team_id}_page_{$i}_per_{$per}_status_{$status}");
-                    }
-                }
-            }
-        }
+        // مسح كاش المستخدمين المتأثرين فقط
+        $this->clearTaskCache($task->creator_id, $task->receiver_id);
         
         return response()->json([
             'message' => 'تم إغلاق المهمة بنجاح',
@@ -244,7 +149,8 @@ class TaskController extends Controller
         $perPage = min($request->input('per_page', 10), 50);
         $status = $request->input('status');
         
-        $cacheKey = "my_tasks_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$status}";
+        $statusKey = $status ?: 'all';
+        $cacheKey = "my_tasks_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$statusKey}";
         
         $tasksData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
             $query = Task::where('receiver_id', auth()->id())
@@ -335,7 +241,8 @@ class TaskController extends Controller
         $perPage = min($request->input('per_page', 5), 50);
         $status = $request->input('status');
         
-        $cacheKey = "my_rewards_data_{$userId}_page_{$page}_per_{$perPage}_status_{$status}";
+        $statusKey = $status ?: 'all';
+        $cacheKey = "my_rewards_data_{$userId}_page_{$page}_per_{$perPage}_status_{$statusKey}";
         $rewardsData = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($userId, $page, $perPage, $status) {
             $query = Reward::where('receiver_id', $userId)
                 ->with(['task:id,title']);
@@ -404,5 +311,75 @@ class TaskController extends Controller
                 'last_page' => $rewardsData['last_page']
             ]
         ]);
+    }
+    
+    /**
+     * عرض تفاصيل المهمة
+     * 
+     * تعرض رقم المهمة وتفاصيلها ومراحلها
+     */
+    public function taskDetails(Request $request): JsonResponse
+    {
+        // التحقق من وجود معرف المهمة
+        $taskId = $request->query('task_id');
+        if (!$taskId) {
+            return response()->json(['message' => 'رقم المهمة مطلوب'], 422);
+        }
+        
+        $userId = auth()->id();
+        
+        // تحديد مفتاح الكاش
+        $cacheKey = "task_details_{$taskId}_{$userId}";
+        
+        // تحديد عدد الطلبات
+        $key = "task_details_rate_{$userId}";
+        $maxAttempts = 60;
+        $decaySeconds = 60;
+        
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'message' => 'تم تجاوز الحد الأقصى لعدد الطلبات. حاول مرة أخرى لاحقًا.',
+            ], 429);
+        }
+        
+        RateLimiter::hit($key, $decaySeconds);
+        
+        // استخدام الكاش لتحسين الأداء
+        try {
+            $task = Cache::remember($cacheKey, 300, function () use ($taskId, $userId) {
+                $task = Task::with([
+                    'creator:id,name,email',
+                    'receiver:id,name,email',
+                    'team:id,name',
+                    'stages' => function($q) {
+                        $q->orderBy('stage_number');
+                    }
+                ])->findOrFail($taskId);
+                
+                // التحقق من الصلاحيات - يجب أن يكون المستخدم منشئ المهمة أو مستلمها أو عضو في الفريق
+                if ($task->creator_id !== $userId && $task->receiver_id !== $userId) {
+                    // تحقق إذا كان المستخدم عضو في الفريق
+                    $isTeamMember = $task->team && $task->team->members()->where('user_id', $userId)->exists();
+                    
+                    if (!$isTeamMember) {
+                        abort(403, 'غير مصرح لك بعرض هذه المهمة');
+                    }
+                }
+                
+                return $task;
+            });
+            
+            return response()->json([
+                'message' => 'تم جلب تفاصيل المهمة بنجاح',
+                'data' => new TaskDetailsResource($task)
+            ]);
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'المهمة غير موجودة'], 404);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            return response()->json(['message' => $e->getMessage()], $e->getStatusCode());
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'حدث خطأ أثناء جلب تفاصيل المهمة'], 500);
+        }
     }
 }

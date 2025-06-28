@@ -12,8 +12,17 @@ return new class extends Migration
     protected function getIndexes(string $table): array
     {
         if (!isset($this->indexesCache[$table])) {
-            $results = DB::select("SHOW INDEX FROM `{$table}`");
-            $this->indexesCache[$table] = collect($results)->pluck('Key_name')->toArray();
+            try {
+                if (DB::getDriverName() === 'sqlite') {
+                    $results = DB::select("PRAGMA index_list({$table})");
+                    $this->indexesCache[$table] = collect($results)->pluck('name')->toArray();
+                } else {
+                    $results = DB::select("SHOW INDEX FROM `{$table}`");
+                    $this->indexesCache[$table] = collect($results)->pluck('Key_name')->toArray();
+                }
+            } catch (\Exception $e) {
+                $this->indexesCache[$table] = [];
+            }
         }
 
         return $this->indexesCache[$table];
@@ -22,6 +31,11 @@ return new class extends Migration
     protected function indexExists(string $table, string $indexName): bool
     {
         return in_array($indexName, $this->getIndexes($table));
+    }
+    
+    protected function tableExists(string $table): bool
+    {
+        return Schema::hasTable($table);
     }
 
     public function up(): void
@@ -91,7 +105,7 @@ return new class extends Migration
         }
 
         // Join Requests Table (للبحث المركب في طلبات الانضمام)
-        if (!$this->indexExists('join_requests', 'join_requests_user_team_status_index')) {
+        if ($this->tableExists('join_requests') && !$this->indexExists('join_requests', 'join_requests_user_team_status_index')) {
             Schema::table('join_requests', function (Blueprint $table) {
                 $table->index(['user_id', 'team_id', 'status'], 'join_requests_user_team_status_index');
             });
@@ -125,7 +139,7 @@ return new class extends Migration
         }
 
         // 🔍 Notifications Table – لتحسين البحث في الإشعارات حسب حالة القراءة
-        if (!$this->indexExists('notifications', 'notifications_notifiable_read_index')) {
+        if ($this->tableExists('notifications') && !$this->indexExists('notifications', 'notifications_notifiable_read_index')) {
             Schema::table('notifications', function (Blueprint $table) {
                 $table->index(['notifiable_type', 'notifiable_id', 'read_at'], 'notifications_notifiable_read_index');
             });
@@ -147,15 +161,17 @@ return new class extends Migration
         ];
 
         foreach ($tables as $tableName => $indexes) {
-            $existingIndexes = $this->getIndexes($tableName);
+            if ($this->tableExists($tableName)) {
+                $existingIndexes = $this->getIndexes($tableName);
 
-            Schema::table($tableName, function (Blueprint $table) use ($indexes, $existingIndexes) {
-                foreach ($indexes as $index) {
-                    if (in_array($index, $existingIndexes)) {
-                        $table->dropIndex($index);
+                Schema::table($tableName, function (Blueprint $table) use ($indexes, $existingIndexes) {
+                    foreach ($indexes as $index) {
+                        if (in_array($index, $existingIndexes)) {
+                            $table->dropIndex($index);
+                        }
                     }
-                }
-            });
+                });
+            }
         }
     }
 };

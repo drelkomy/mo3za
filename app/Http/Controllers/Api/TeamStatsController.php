@@ -8,92 +8,54 @@ use App\Http\Requests\Api\TeamMembersTaskStatsRequest;
 use App\Http\Resources\MemberTaskResource;
 use App\Http\Resources\MemberTaskStatsResource;
 use App\Http\Resources\TeamMemberStatsResource;
-use App\Http\Resources\TeamSummaryResource;
-use App\Http\Resources\MemberTaskSummaryResource;
 use App\Models\Task;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class TeamStatsController extends Controller
 {
     /**
-     * مسح كاش الفريق والأعضاء
+     * مسح كاش المستخدم الحالي فقط
      */
-    private function clearTeamCache(Team $team): void
+    private function clearUserCache(int $userId): void
     {
-        // مسح كاش الفريق
-        Cache::forget("my_team_" . $team->owner_id);
-        Cache::forget("user_team_" . $team->owner_id);
+        $patterns = [
+            "member_stats_{$userId}",
+            "member_task_stats_{$userId}",
+            "team_members_task_stats_{$userId}"
+        ];
         
-        // مسح كاش المهام
-        for ($i = 1; $i <= 5; $i++) { // مسح أول 5 صفحات
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$team->id}_page_{$i}_per_10_status_in_progress");
-        }
-        
-        // مسح كاش المكافآت
-        for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_rewards_{$team->id}_page_{$i}_per_10_status_");
-        }
-        
-        // مسح كاش إحصائيات الأعضاء
-        $memberIds = $team->members()->pluck('user_id')->toArray();
-        foreach ($memberIds as $memberId) {
-            Cache::forget("my_team_" . $memberId);
-            Cache::forget("user_team_" . $memberId);
-            
-            // مسح كاش إحصائيات مهام العضو
-            for ($i = 1; $i <= 3; $i++) {
-                Cache::forget("member_task_stats_{$team->id}_{$memberId}_page_{$i}");
-            }
-            
-            // مسح كاش مهام العضو
-            Cache::forget("my_tasks_" . $memberId);
-        }
-        
-        // مسح كاش إحصائيات الفريق لجميع الحالات الممكنة
-        $statuses = ['', 'pending', 'in_progress', 'completed'];
-        $perPages = [10, 20, 30, 40, 50];
-        for ($i = 1; $i <= 3; $i++) {
-            foreach ($statuses as $status) {
-                foreach ($perPages as $perPage) {
-                    Cache::forget("team_members_task_stats_{$team->id}_page_{$i}_per_{$perPage}_status_{$status}");
-                }
-            }
+        foreach ($patterns as $pattern) {
+            Cache::forget($pattern . '_all');
+            Cache::forget($pattern . '_pending');
+            Cache::forget($pattern . '_completed');
+            Cache::forget($pattern . '_in_progress');
         }
     }
+    
     /**
      * عرض إحصائيات أعضاء الفريق
      */
     public function getMemberStats(\App\Http\Requests\Api\MemberStatsRequest $request): JsonResponse
     {
-        try {
-            // التحقق من المصادقة
-            if (!auth()->check()) {
-                return response()->json(['message' => 'غير مصادق'], 401);
-            }
-            
-            $team = Team::where('owner_id', auth()->id())->first();
+        $userId = auth()->id();
+        $cacheKey = "member_stats_" . $userId;
+        
+        $data = Cache::remember($cacheKey, 300, function () use ($userId) {
+            $team = Team::where('owner_id', $userId)->first();
             
             if (!$team) {
-                return response()->json(['message' => 'أنت لست قائد فريق'], 403);
+                return null;
             }
 
-            // جلب أعضاء الفريق
             $members = $team->members()->get(['users.id', 'name', 'email', 'avatar_url']);
-            
-            // جلب مهام الفريق لحساب إحصائيات الأعضاء
-            $allTeamTasks = Task::where('creator_id', $team->owner_id)
+            $allTeamTasks = Task::where('creator_id', $userId)
                 ->select('id', 'title', 'receiver_id', 'status', 'progress', 'due_date', 'created_at')
                 ->get();
                 
-            // جلب العلاقة بين المهام والأعضاء
             $taskUserRelations = DB::table('task_user')
                 ->whereIn('task_id', $allTeamTasks->pluck('id')->toArray())
                 ->get();
@@ -101,14 +63,11 @@ class TeamStatsController extends Controller
             $result = [];
             
             foreach ($members as $member) {
-                // فلترة مهام العضو
                 $memberTasks = $allTeamTasks->filter(function ($task) use ($member, $taskUserRelations) {
-                    // المهام التي يكون العضو مستلمها
                     if ($task->receiver_id == $member->id) {
                         return true;
                     }
                     
-                    // المهام التي يكون العضو مشاركاً فيها
                     foreach ($taskUserRelations as $relation) {
                         if ($relation->task_id == $task->id && $relation->user_id == $member->id) {
                             return true;
@@ -118,13 +77,11 @@ class TeamStatsController extends Controller
                     return false;
                 });
                 
-                // إحصائيات مهام العضو
                 $totalTasks = $memberTasks->count();
                 $completedTasks = $memberTasks->where('status', 'completed')->count();
                 $pendingTasks = $memberTasks->where('status', 'pending')->count();
                 $inProgressTasks = $memberTasks->where('status', 'in_progress')->count();
                 
-                // إضافة العضو إلى النتيجة
                 $result[] = [
                     'id' => $member->id,
                     'name' => $member->name,
@@ -139,20 +96,19 @@ class TeamStatsController extends Controller
                 ];
             }
             
-
-            
-            return response()->json([
-                'message' => 'تم جلب إحصائيات أعضاء الفريق بنجاح',
-                'data' => [
-                    'members' => TeamMemberStatsResource::collection($result)
-                ]
-            ])->setMaxAge(300)->setPublic();
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'حدث خطأ أثناء جلب إحصائيات أعضاء الفريق',
-                'error' => $e->getMessage()
-            ], 500);
+            return $result;
+        });
+        
+        if (!$data) {
+            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
         }
+        
+        return response()->json([
+            'message' => 'تم جلب إحصائيات أعضاء الفريق بنجاح',
+            'data' => [
+                'members' => TeamMemberStatsResource::collection($data)
+            ]
+        ])->setMaxAge(300)->setPublic();
     }
 
     /**
@@ -160,79 +116,40 @@ class TeamStatsController extends Controller
      */
     public function getMemberTaskStats(MemberTaskStatsRequest $request): JsonResponse
     {
+        $userId = auth()->id();
         $memberId = $request->input('member_id');
-        $team = Team::where('owner_id', auth()->id())->first();
+        $cacheKey = "member_task_stats_{$userId}_{$memberId}";
         
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
-        
-        // التحقق من أن العضو ينتمي للفريق
-        $isMember = $team->members()->where('user_id', $memberId)->exists();
-        if (!$isMember) {
-            return response()->json(['message' => 'العضو ليس في فريقك'], 403);
-        }
-        
-        $cacheKey = "member_task_stats_{$team->id}_{$memberId}";
-        
-        $data = Cache::remember($cacheKey, 300, function () use ($team, $memberId) {
+        $data = Cache::remember($cacheKey, 300, function () use ($userId, $memberId) {
+            $team = Team::where('owner_id', $userId)->first();
+            
+            if (!$team) {
+                return null;
+            }
+            
+            $isMember = $team->members()->where('user_id', $memberId)->exists();
+            if (!$isMember) {
+                return false;
+            }
+            
             $member = User::find($memberId);
             
-            // جلب المهام مع المراحل
-            $tasksQuery = Task::where('creator_id', $team->owner_id)
+            $tasksQuery = Task::where('creator_id', $userId)
                 ->where(function ($query) use ($memberId) {
                     $query->where('receiver_id', $memberId)
                           ->orWhereHas('members', function ($q) use ($memberId) {
                               $q->where('user_id', $memberId);
                           });
                 })
-                ->with(['stages' => function($q) {
-                    $q->orderBy('stage_number');
-                }]);
+                ->with('stages');
                 
             $totalTasks = $tasksQuery->count();
-            
-            $tasks = $tasksQuery->orderBy('created_at', 'desc')
-                ->get();
+            $tasks = $tasksQuery->orderBy('created_at', 'desc')->get();
                 
-            $completedTasks = Task::where('creator_id', $team->owner_id)
-                ->where('status', 'completed')
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->count();
-                
-            $inProgressTasks = Task::where('creator_id', $team->owner_id)
-                ->where('status', 'in_progress')
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->count();
-                
-            $pendingTasks = Task::where('creator_id', $team->owner_id)
-                ->where('status', 'pending')
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->count();
-                
-            $averageProgress = Task::where('creator_id', $team->owner_id)
-                ->where(function ($query) use ($memberId) {
-                    $query->where('receiver_id', $memberId)
-                          ->orWhereHas('members', function ($q) use ($memberId) {
-                              $q->where('user_id', $memberId);
-                          });
-                })
-                ->avg('progress') ?? 0;
+            $completedTasks = $tasks->where('status', 'completed')->count();
+            $inProgressTasks = $tasks->where('status', 'in_progress')->count();
+            $pendingTasks = $tasks->where('status', 'pending')->count();
+            $averageProgress = $tasks->avg('progress') ?? 0;
                 
             return [
                 'stats' => [
@@ -249,6 +166,14 @@ class TeamStatsController extends Controller
             ];
         });
         
+        if ($data === null) {
+            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
+        }
+        
+        if ($data === false) {
+            return response()->json(['message' => 'العضو ليس في فريقك'], 403);
+        }
+        
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام العضو بنجاح',
             'data' => [
@@ -263,31 +188,27 @@ class TeamStatsController extends Controller
      */
     public function getTeamMembersTaskStats(TeamMembersTaskStatsRequest $request): JsonResponse
     {
+        $userId = auth()->id();
         $status = $request->input('status');
-        $team = Team::where('owner_id', auth()->id())->first();
+        $statusKey = $status ?: 'all';
+        $cacheKey = "team_members_task_stats_{$userId}_{$statusKey}";
         
-        if (!$team) {
-            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
-        }
-        
-        $cacheKey = "team_members_task_stats_{$team->id}_status_{$status}";
-        
-        $data = Cache::remember($cacheKey, 300, function () use ($team, $status) {
-            // جلب جميع أعضاء الفريق
-            $memberIds = $team->members()->pluck('user_id');
+        $data = Cache::remember($cacheKey, 300, function () use ($userId, $status) {
+            $team = Team::where('owner_id', $userId)->first();
             
+            if (!$team) {
+                return null;
+            }
+            
+            $memberIds = $team->members()->pluck('user_id');
             $members = User::whereIn('id', $memberIds)
                 ->select('id', 'name', 'email', 'avatar_url')
                 ->get();
             
-            // جلب جميع مهام الفريق مرة واحدة بناءً على creator_id
-            $allTeamTasks = Task::where('creator_id', $team->owner_id)
-                ->with(['stages' => function($q) {
-                    $q->orderBy('stage_number');
-                }])
+            $allTeamTasks = Task::where('creator_id', $userId)
+                ->with('stages')
                 ->get();
                 
-            // جلب العلاقة بين المهام والأعضاء
             $taskUserRelations = DB::table('task_user')
                 ->whereIn('task_id', $allTeamTasks->pluck('id')->toArray())
                 ->get();
@@ -295,19 +216,15 @@ class TeamStatsController extends Controller
             $membersData = [];
             
             foreach ($members as $member) {
-                // فلترة مهام العضو (استبعاد مهام مالك الفريق)
-                $memberTasks = $allTeamTasks->filter(function ($task) use ($member, $taskUserRelations, $team) {
-                    // تجاهل المهام التي يستلمها مالك الفريق
-                    if ($task->receiver_id == $team->owner_id) {
+                $memberTasks = $allTeamTasks->filter(function ($task) use ($member, $taskUserRelations, $userId) {
+                    if ($task->receiver_id == $userId) {
                         return false;
                     }
                     
-                    // المهام التي يكون العضو مستلمها
                     if ($task->receiver_id == $member->id) {
                         return true;
                     }
                     
-                    // المهام التي يكون العضو مشاركاً فيها
                     foreach ($taskUserRelations as $relation) {
                         if ($relation->task_id == $task->id && $relation->user_id == $member->id) {
                             return true;
@@ -317,19 +234,16 @@ class TeamStatsController extends Controller
                     return false;
                 });
                 
-                // إحصائيات مهام العضو
                 $totalTasks = $memberTasks->count();
                 $completedTasks = $memberTasks->where('status', 'completed')->count();
                 $pendingTasks = $memberTasks->where('status', 'pending')->count();
                 $inProgressTasks = $memberTasks->where('status', 'in_progress')->count();
                 $averageProgress = $memberTasks->avg('progress') ?? 0;
                 
-                // فلترة المهام حسب الحالة إذا تم تحديدها
                 if ($status) {
                     $memberTasks = $memberTasks->where('status', $status);
                 }
                 
-                // جلب جميع مهام العضو
                 $allMemberTasks = $memberTasks->sortByDesc('created_at')->values()->map(function ($task) {
                     return [
                         'id' => $task->id,
@@ -363,6 +277,10 @@ class TeamStatsController extends Controller
                 'members' => $membersData
             ];
         });
+        
+        if (!$data) {
+            return response()->json(['message' => 'أنت لست قائد فريق'], 403);
+        }
         
         return response()->json([
             'message' => 'تم جلب إحصائيات مهام أعضاء الفريق بنجاح',
