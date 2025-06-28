@@ -23,47 +23,29 @@ class PackageController extends Controller
 
     public function index(): JsonResponse
     {
-        $packages = Cache::remember('paid_packages_v2', 900, function () {
-            return Package::where('is_active', true)
-                ->where('is_trial', false)
-                ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
-                ->orderBy('price')
-                ->get();
-        });
+        $packages = Package::where('is_active', true)
+            ->where('is_trial', false)
+            ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
+            ->orderBy('price')
+            ->get();
         
         return response()->json([
             'message' => 'تم جلب الباقات بنجاح',
             'data' => PackageResource::collection($packages)
-        ])->setMaxAge(900)->setPublic();
+        ]);
     }
     
     public function trial(): JsonResponse
     {
         $userId = auth()->id();
-        $cacheKey = "trial_status_{$userId}";
         
-        $data = Cache::remember($cacheKey, 300, function () use ($userId) {
-            $hasUsedTrial = DB::table('subscriptions')
-                ->join('packages', 'subscriptions.package_id', '=', 'packages.id')
-                ->where('subscriptions.user_id', $userId)
-                ->where('packages.is_trial', true)
-                ->exists();
-                
-            $trialPackage = null;
-            if (!$hasUsedTrial) {
-                $trialPackage = Package::where('is_active', true)
-                    ->where('is_trial', true)
-                    ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
-                    ->first();
-            }
+        $hasUsedTrial = DB::table('subscriptions')
+            ->join('packages', 'subscriptions.package_id', '=', 'packages.id')
+            ->where('subscriptions.user_id', $userId)
+            ->where('packages.is_trial', true)
+            ->exists();
             
-            return [
-                'has_used_trial' => $hasUsedTrial,
-                'trial_package' => $trialPackage
-            ];
-        });
-        
-        if ($data['has_used_trial']) {
+        if ($hasUsedTrial) {
             return response()->json([
                 'message' => 'لقد استخدمت الباقة التجريبية من قبل',
                 'trial_package' => null,
@@ -71,10 +53,15 @@ class PackageController extends Controller
             ], 422);
         }
         
+        $trialPackage = Package::where('is_active', true)
+            ->where('is_trial', true)
+            ->select(['id', 'name', 'price', 'max_tasks', 'max_milestones_per_task'])
+            ->first();
+        
         return response()->json([
             'message' => 'الباقة التجريبية متاحة',
-            'trial_package' => $data['trial_package'] ? new PackageResource($data['trial_package']) : null
-        ])->setMaxAge(300)->setPublic();
+            'trial_package' => $trialPackage ? new PackageResource($trialPackage) : null
+        ]);
     }
     
     public function subscribe(SubscribePackageRequest $request): JsonResponse
@@ -104,11 +91,7 @@ class PackageController extends Controller
             // تسجيل المحاولة
             RateLimiter::hit($key, 300);
             
-            // تنظيف الكاش
-            $this->clearUserCache($userId);
-            
-            // تنظيف كاش الفريق
-            CacheService::clearTeamCache($userId, $userId, false);
+            // لا نحتاج لتنظيف الكاش - الاشتراكات بدون كاش
             
             return response()->json([
                 'message' => $subscription->package->is_trial 
@@ -135,19 +118,7 @@ class PackageController extends Controller
         }
     }
     
-    private function clearUserCache(int $userId): void
-    {
-        $cacheKeys = [
-            "user_subscription_{$userId}",
-            "trial_status_{$userId}",
-            "current_subscription_{$userId}",
-            "user_{$userId}_has_active_subscription"
-        ];
-        
-        foreach ($cacheKeys as $key) {
-            Cache::forget($key);
-        }
-    }
+
     
 
 }

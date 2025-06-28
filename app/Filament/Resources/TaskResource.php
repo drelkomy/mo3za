@@ -322,7 +322,7 @@ class TaskResource extends Resource
                                 'giver_id' => $record->creator_id,
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => $record->reward_amount,
-                                'status' => 'pending',
+                                'status' => 'received',
                                 'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
                             
@@ -334,7 +334,7 @@ class TaskResource extends Resource
                                 'giver_id' => $record->creator_id,
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => 0,
-                                'status' => 'pending',
+                                'status' => 'received',
                                 'notes' => 'مكافأة مهمة: ' . $record->title,
                             ]);
                             

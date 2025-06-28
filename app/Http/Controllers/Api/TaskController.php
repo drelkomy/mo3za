@@ -276,52 +276,88 @@ class TaskController extends Controller
     public function closeTask(\App\Http\Requests\Api\TaskClosureRequest $request): JsonResponse
     {
         $taskId = $request->input('task_id');
-        $task = Task::findOrFail($taskId);
+        $task = Task::with('stages')->findOrFail($taskId);
         
         // التحقق من الصلاحيات
         if ($task->creator_id !== auth()->id()) {
             return response()->json(['message' => 'غير مصرح لك بإغلاق هذه المهمة'], 403);
         }
         
-        // معالجة الصورة المرفوعة
-        $proofImage = null;
-        if ($request->hasFile('proof_image')) {
-            $file = $request->file('proof_image');
-            $path = $file->store('task_images', 'public');
-            $proofImage = [
-                'path' => $path,
-                'name' => $file->getClientOriginalName(),
-                'type' => $file->getClientMimeType(),
-                'size' => $file->getSize()
+        // تحديد حالة الإغلاق من الطلب
+        $closeAsCompleted = $request->input('status') === 'completed';
+        
+        DB::beginTransaction();
+        try {
+            // معالجة الصورة المرفوعة
+            $proofImage = null;
+            if ($request->hasFile('proof_image')) {
+                $file = $request->file('proof_image');
+                $path = $file->store('task_images', 'public');
+                $proofImage = [
+                    'path' => $path,
+                    'name' => $file->getClientOriginalName(),
+                    'type' => $file->getClientMimeType(),
+                    'size' => $file->getSize()
+                ];
+            }
+            
+            // تحضير البيانات للتحديث
+            $updateData = [
+                'status' => 'completed',
+                'progress' => 100
             ];
+            
+            // إغلاق جميع المراحل في الحالتين
+            $task->stages()->update(['status' => 'completed']);
+            
+            // إضافة الملاحظات إذا تم توفيرها
+            if ($request->has('proof_notes')) {
+                $updateData['proof_notes'] = $request->input('proof_notes');
+            }
+            
+            // إضافة الصورة إذا تم رفعها
+            if ($proofImage) {
+                $updateData['proof_image'] = $proofImage;
+            }
+            
+            // تحديث المهمة
+            $task->update($updateData);
+            
+            $message = 'تم إغلاق المهمة بنجاح';
+            
+            // توزيع المكافأة فقط عند اختيار "مكتملة"
+            if ($closeAsCompleted && ($task->reward_amount > 0 || $task->reward_description)) {
+                $rewardData = [
+                    'task_id' => $task->id,
+                    'giver_id' => $task->creator_id,
+                    'receiver_id' => $task->receiver_id,
+                    'amount' => $task->reward_amount ?? 0,
+                    'status' => 'received',
+                    'notes' => 'مكافأة إنجاز مهمة: ' . $task->title
+                ];
+                
+                Reward::create($rewardData);
+                $message .= ' وتم توزيع المكافأة';
+            }
+            
+            DB::commit();
+            
+            // مسح كاش الفريق (حالة حرجة لإغلاق المهمة)
+            CacheService::clearTeamCache($task->creator_id, $task->receiver_id, true);
+            
+            return response()->json([
+                'message' => $message,
+                'data' => new TaskResource($task->fresh()),
+                'reward_distributed' => $closeAsCompleted && ($task->reward_amount > 0 || $task->reward_description)
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'حدث خطأ أثناء إغلاق المهمة',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
-        
-        // تحضير البيانات للتحديث
-        $updateData = [
-            'status' => 'completed',
-            'progress' => 100
-        ];
-        
-        // إضافة الملاحظات إذا تم توفيرها
-        if ($request->has('proof_notes')) {
-            $updateData['proof_notes'] = $request->input('proof_notes');
-        }
-        
-        // إضافة الصورة إذا تم رفعها
-        if ($proofImage) {
-            $updateData['proof_image'] = $proofImage;
-        }
-        
-        // تحديث المهمة
-        $task->update($updateData);
-        
-        // مسح كاش المستخدمين المتأثرين مع تفاصيل المهمة
-        $this->clearTaskCache($task->creator_id, $task->receiver_id, $task->id);
-        
-        return response()->json([
-            'message' => 'تم إغلاق المهمة بنجاح',
-            'data' => new TaskResource($task)
-        ]);
     }
     
     /**

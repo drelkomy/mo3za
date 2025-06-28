@@ -157,7 +157,7 @@ class TaskService
                 'receiver_id' => $task->receiver_id,
                 'giver_id' => $task->creator_id,
                 'amount' => $task->reward_amount,
-                'status' => 'pending',
+                'status' => 'received',
             ]);
 
             $task->update([

@@ -418,8 +418,7 @@ class ApiPaymentController extends Controller
             if ($subscription) {
                 Log::info('Subscription created', ['subscription_id' => $subscription->id, 'user_id' => $payment->user_id]);
                 // مسح الكاش المتعلق بالباقات وويدجات الاشتراك عند إنشاء اشتراك جديد لضمان ظهور الويدجات الأخرى في Filament
-                Cache::forget('packages');
-                Cache::forget('package_subscription_widget');
+                // لا نحتاج لتنظيف الكاش - الاشتراكات بدون كاش
             } else {
                 Log::error('Failed to create subscription in success method', ['payment_id' => $payment->id]);
             }
@@ -458,8 +457,7 @@ class ApiPaymentController extends Controller
                 'status' => 'cancelled'
             ]);
             // مسح الكاش المتعلق بالباقات عند إلغاء الدفع لضمان ظهور ويدجات الباقات في Filament
-            Cache::forget('packages');
-            Cache::forget('package_subscription_widget');
+            // لا نحتاج لتنظيف الكاش - الاشتراكات بدون كاش
         }
         
         return response()->json([
