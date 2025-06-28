@@ -333,7 +333,7 @@ class TaskController extends Controller
                     'receiver_id' => $task->receiver_id,
                     'amount' => $task->reward_amount ?? 0,
                     'status' => 'received',
-                    'notes' => 'مكافأة إنجاز مهمة: ' . $task->title
+                    'notes' => 'مكافأة إنجاز مهمة: ' . $task->title . ($task->reward_description ? ' - ' . $task->reward_description : '')
                 ];
                 
                 Reward::create($rewardData);

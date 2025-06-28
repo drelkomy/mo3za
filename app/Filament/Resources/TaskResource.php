@@ -266,7 +266,8 @@ class TaskResource extends Resource
                     ->label('وصف المكافأة')
                     ->limit(30)
                     ->color('warning')
-                    ->placeholder('لا يوجد'),
+                    ->placeholder('لا يوجد')
+                    ->visible(fn ($record) => $record && $record->reward_type === 'other'),
                 Tables\Columns\TextColumn::make('subscription.status')
                     ->label('حالة الاشتراك')
                     ->badge()
@@ -323,7 +324,7 @@ class TaskResource extends Resource
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => $record->reward_amount,
                                 'status' => 'received',
-                                'notes' => 'مكافأة مهمة: ' . $record->title,
+                                'notes' => 'مكافأة مهمة: ' . $record->title . ($record->reward_description ? ' - ' . $record->reward_description : ''),
                             ]);
                             
                             // مسح كاش الفريق
@@ -335,7 +336,7 @@ class TaskResource extends Resource
                                 'receiver_id' => $record->receiver_id,
                                 'amount' => 0,
                                 'status' => 'received',
-                                'notes' => 'مكافأة مهمة: ' . $record->title,
+                                'notes' => 'مكافأة مهمة: ' . $record->title . ($record->reward_description ? ' - ' . $record->reward_description : ''),
                             ]);
                             
                             // مسح كاش الفريق

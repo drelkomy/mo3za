@@ -158,6 +158,7 @@ class TaskService
                 'giver_id' => $task->creator_id,
                 'amount' => $task->reward_amount,
                 'status' => 'received',
+                'notes' => 'مكافأة إنجاز مهمة' . ($task->reward_description ? ': ' . $task->reward_description : ''),
             ]);
 
             $task->update([

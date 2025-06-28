@@ -121,6 +121,9 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/search', [\App\Http\Controllers\Api\SearchController::class, 'search'])
         ->middleware('throttle:search');
 
+    // تنظيف الكاش (للمطورين فقط)
+    Route::post('/cache/clear', [\App\Http\Controllers\Api\CacheController::class, 'clearCache']);
+    
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);
 });
