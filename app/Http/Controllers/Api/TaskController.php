@@ -64,7 +64,7 @@ class TaskController extends Controller
         }
         
         // مسح كاش الفريق المحدد فقط
-        CacheService::clearTeamCache($creatorId, $receiverId);
+        CacheService::clearTeamCache($creatorId, $receiverId, false);
     }
     
     /**

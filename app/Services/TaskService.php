@@ -166,7 +166,7 @@ class TaskService
             ]);
 
             // مسح كاش الفريق
-            CacheService::clearTeamCache($task->creator_id, $task->receiver_id);
+            CacheService::clearTeamCache($task->creator_id, $task->receiver_id, false);
 
             Log::info("تم توزيع مكافأة بقيمة {$task->reward_amount} للمستخدم {$task->receiver_id}");
             

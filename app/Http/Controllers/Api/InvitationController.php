@@ -8,6 +8,7 @@ use App\Http\Resources\InvitationResource;
 use App\Models\Invitation;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -97,23 +98,8 @@ class InvitationController extends Controller
                 return response()->json(['message' => 'فشل في إنشاء الدعوة', 'details' => 'Failed to create invitation in database. Data provided: ' . json_encode($invitationData)], 500);
             }
 
-            // مسح cache للمستخدم المرسل والمستلم والفريق مع التعامل مع مفاتيح متعددة الصفحات
-            $commonPerPageValues = [10, 20, 50];
-            for ($page = 1; $page <= 5; $page++) {
-                foreach ($commonPerPageValues as $perPage) {
-                    Cache::forget("my_invitations_user_" . auth()->id() . "_page_{$page}_per_{$perPage}");
-                    Cache::forget("my_invitations_user_" . $user->id . "_page_{$page}_per_{$perPage}");
-                }
-            }
-            // مسح cache لدعوات الفريق
-            $statuses = ['all', 'pending', 'accepted', 'rejected'];
-            for ($page = 1; $page <= 5; $page++) {
-                foreach ($commonPerPageValues as $perPage) {
-                    foreach ($statuses as $status) {
-                        Cache::forget("team_invitations_{$team->id}_page_{$page}_per_{$perPage}_status_{$status}");
-                    }
-                }
-            }
+            // مسح كاش الفريق
+            CacheService::clearTeamCache(auth()->id(), $user->id, false);
 
             return response()->json([
                 'message' => 'تم إرسال طلب الانضمام بنجاح',
@@ -290,15 +276,8 @@ class InvitationController extends Controller
                     if (!$team->members()->where('user_id', $userId)->exists()) {
                         $team->members()->attach($userId);
                     }
-                    // مسح cache لفريق المالك
-                    Cache::forget("my_team_" . $team->owner_id);
-                    // مسح cache للمستخدم الذي قبل الطلب
-                    Cache::forget("my_team_" . $userId);
-                    // مسح cache لعدد أعضاء الفريق
-                    Cache::forget("team_" . $team->id . "_members_count");
-                    // مسح cache لفريق المستخدم
-                    Cache::forget("user_team_" . $userId);
-                    Cache::forget("user_team_" . $team->owner_id);
+                    // مسح كاش الفريق
+                    CacheService::clearTeamCache($team->owner_id, $userId, true); // قبول عضو = حالة حرجة
                 }
             }
             

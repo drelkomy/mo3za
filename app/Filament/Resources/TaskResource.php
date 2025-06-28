@@ -327,7 +327,7 @@ class TaskResource extends Resource
                             ]);
                             
                             // مسح كاش الفريق
-                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id);
+                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id, true); // إغلاق مهمة = حالة حرجة
                         } elseif ($record->reward_type === 'other' && $record->reward_description) {
                             \App\Models\Reward::create([
                                 'task_id' => $record->id,
@@ -339,7 +339,7 @@ class TaskResource extends Resource
                             ]);
                             
                             // مسح كاش الفريق
-                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id);
+                            CacheService::clearTeamCache($record->creator_id, $record->receiver_id, true); // إغلاق مهمة = حالة حرجة
                         }
                         
                         \Filament\Notifications\Notification::make()

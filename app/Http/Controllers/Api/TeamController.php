@@ -157,9 +157,8 @@ class TeamController extends Controller
         
         $team->members()->detach($memberId);
         
-        // مسح كاش المستخدم الحالي والعضو المحذوف
-        $this->clearUserCache(auth()->id());
-        $this->clearUserCache($memberId);
+        // مسح كاش الفريق
+        \App\Services\CacheService::clearTeamCache(auth()->id(), $memberId, true); // حذف عضو = حالة حرجة
         
         return response()->json([
             'message' => 'تم إزالة العضو من فريقك بنجاح'
@@ -590,7 +589,7 @@ class TeamController extends Controller
                 
                 
                 // مسح كاش الفريق
-                \App\Services\CacheService::clearTeamCache(auth()->id(), $rid);
+                \App\Services\CacheService::clearTeamCache(auth()->id(), $rid, false);
                 
                 // تحميل العلاقات
                 $task->load(['receiver:id,name,email', 'creator:id,name,email', 'stages']);

@@ -9,6 +9,7 @@ use App\Http\Resources\Api\SubscriptionCreateResource;
 use App\Models\Package;
 use App\Models\Subscription;
 use App\Services\SubscriptionService;
+use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
@@ -106,11 +107,8 @@ class PackageController extends Controller
             // تنظيف الكاش
             $this->clearUserCache($userId);
             
-            // تنظيف كاش الفريق إذا كان المستخدم لديه فريق
-            $team = \App\Models\Team::where('owner_id', $userId)->first();
-            if ($team) {
-                $this->clearTeamCache($team->id);
-            }
+            // تنظيف كاش الفريق
+            CacheService::clearTeamCache($userId, $userId, false);
             
             return response()->json([
                 'message' => $subscription->package->is_trial 
@@ -151,21 +149,5 @@ class PackageController extends Controller
         }
     }
     
-    /**
-     * مسح كاش الفريق
-     */
-    private function clearTeamCache(int $teamId): void
-    {
-        // مسح كاش المهام
-        for ($i = 1; $i <= 5; $i++) {
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_completed");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_pending");
-            Cache::forget("team_tasks_{$teamId}_page_{$i}_per_10_status_in_progress");
-            
-            // مسح كاش الإحصائيات
-            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_per_10");
-            Cache::forget("team_members_task_stats_{$teamId}_page_{$i}_tasks_per_page_10");
-        }
-    }
+
 }
