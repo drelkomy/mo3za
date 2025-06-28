@@ -117,6 +117,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Payment Callbacks - استقبال نتائج الدفع
     Route::post('/payment/mobile-init', [\App\Http\Controllers\Api\SubscriptionController::class, 'createPaymentForMobile']); // إنشاء رابط دفع لتطبيق المحمول
 
+    // البحث
+    Route::post('/search', [\App\Http\Controllers\Api\SearchController::class, 'search'])
+        ->middleware('throttle:search');
+
     // تسجيل الخروج
     Route::post('/logout', [AuthController::class, 'logout']);
 });
