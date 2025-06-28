@@ -15,8 +15,6 @@ class TaskResource extends JsonResource
             'progress' => $this->progress,
             'due_date' => $this->due_date,
             'created_at' => $this->created_at->format('Y-m-d'),
-            'stages_count' => $this->stages_count,
-            'completed_stages' => $this->completed_stages,
             'creator' => [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,

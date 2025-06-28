@@ -264,8 +264,7 @@ class TaskController extends Controller
         // تحضير البيانات للتحديث
         $updateData = [
             'status' => 'completed',
-            'progress' => 100,
-            'completed_at' => now()
+            'progress' => 100
         ];
         
         // إضافة الملاحظات إذا تم توفيرها
@@ -325,7 +324,7 @@ class TaskController extends Controller
         $statusKey = $status ?: 'all';
         $cacheKey = "my_tasks_" . auth()->id() . "_page_{$page}_per_{$perPage}_status_{$statusKey}";
         
-        $tasksData = Cache::remember($cacheKey, 300, function () use ($page, $perPage, $status) {
+        $tasksData = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($page, $perPage, $status) {
             $query = Task::where('receiver_id', auth()->id())
                 ->with([
                     'creator:id,name,email,avatar_url',
@@ -421,7 +420,7 @@ class TaskController extends Controller
         
         $statusKey = $status ?: 'all';
         $cacheKey = "my_rewards_data_{$userId}_page_{$page}_per_{$perPage}_status_{$statusKey}";
-        $rewardsData = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($userId, $page, $perPage, $status) {
+        $rewardsData = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($userId, $page, $perPage, $status) {
             $query = Reward::where('receiver_id', $userId)
                 ->with(['task:id,title']);
             
@@ -509,15 +508,12 @@ class TaskController extends Controller
         $cacheKey = "task_details_{$taskId}_{$userId}";
         
         try {
-            $task = Cache::remember($cacheKey, 300, function () use ($taskId, $userId) {
+            $task = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($taskId, $userId) {
                 $task = Task::with([
                     'creator:id,name,email,avatar_url',
                     'receiver:id,name,email,avatar_url', 
                     'team:id,name',
                     'stages' => fn($q) => $q->orderBy('stage_number')
-                ])->withCount([
-                    'stages as stages_count',
-                    'stages as completed_stages' => fn($q) => $q->where('status', 'completed')
                 ])->findOrFail($taskId);
                 
                 // التحقق من الصلاحيات

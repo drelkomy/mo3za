@@ -31,7 +31,7 @@ class TaskStageResource extends JsonResource
             'description' => $this->description,
             'status' => $this->status,
             'stage_number' => $this->stage_number,
-            'completed_at' => $this->completed_at?->format('Y-m-d H:i:s'),
+
             'proof_notes' => $this->proof_notes,
             'proof_files' => $proofFiles,
             'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
