@@ -43,11 +43,17 @@ class TaskController extends Controller
     /**
      * مسح كاش المهمة للمستخدمين المتأثرين فقط
      */
-    private function clearTaskCache(int $creatorId, int $receiverId): void
+    private function clearTaskCache(int $creatorId, int $receiverId, int $taskId = null): void
     {
         $this->clearUserCache($creatorId);
         if ($receiverId !== $creatorId) {
             $this->clearUserCache($receiverId);
+        }
+        
+        // مسح كاش تفاصيل المهمة
+        if ($taskId) {
+            Cache::forget("task_details_{$taskId}_{$creatorId}");
+            Cache::forget("task_details_{$taskId}_{$receiverId}");
         }
     }
     
@@ -69,7 +75,7 @@ class TaskController extends Controller
         ]);
         
         // مسح كاش المستخدمين المتأثرين فقط
-        $this->clearTaskCache($task->creator_id, $task->receiver_id);
+        $this->clearTaskCache($task->creator_id, $task->receiver_id, $task->id);
         
         return response()->json([
             'message' => 'تم تحديث حالة المهمة بنجاح',
@@ -115,6 +121,15 @@ class TaskController extends Controller
                 'completed_at' => now(),
                 'proof_notes' => $request->proof_notes
             ];
+            
+            // إضافة قيمة افتراضية لـ proof_files إذا لم يكن هناك ملف
+            if (!$request->hasFile('proof_image')) {
+                $updateData['proof_files'] = [
+                    'type' => 'text_only',
+                    'notes' => $request->proof_notes ?? 'تم إكمال المرحلة',
+                    'completed_at' => now()->toISOString()
+                ];
+            }
             
             // معالجة الصورة
             if ($request->hasFile('proof_image')) {
@@ -194,8 +209,8 @@ class TaskController extends Controller
             
             DB::commit();
             
-            // مسح الكاش
-            $this->clearTaskCache($task->creator_id, $task->receiver_id);
+            // مسح الكاش مع تفاصيل المهمة
+            $this->clearTaskCache($task->creator_id, $task->receiver_id, $task->id);
             
             $response = [
                 'message' => 'تم إكمال المرحلة بنجاح',
@@ -249,7 +264,8 @@ class TaskController extends Controller
         // تحضير البيانات للتحديث
         $updateData = [
             'status' => 'completed',
-            'progress' => 100
+            'progress' => 100,
+            'completed_at' => now()
         ];
         
         // إضافة الملاحظات إذا تم توفيرها
@@ -265,8 +281,8 @@ class TaskController extends Controller
         // تحديث المهمة
         $task->update($updateData);
         
-        // مسح كاش المستخدمين المتأثرين فقط
-        $this->clearTaskCache($task->creator_id, $task->receiver_id);
+        // مسح كاش المستخدمين المتأثرين مع تفاصيل المهمة
+        $this->clearTaskCache($task->creator_id, $task->receiver_id, $task->id);
         
         return response()->json([
             'message' => 'تم إغلاق المهمة بنجاح',

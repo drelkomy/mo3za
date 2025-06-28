@@ -9,15 +9,19 @@ class TaskStageResource extends JsonResource
     public function toArray($request)
     {
         $proofFiles = null;
-        if ($this->proof_files && is_array($this->proof_files) && isset($this->proof_files['path'])) {
-            $proofFiles = [
-                'path' => $this->proof_files['path'],
-                'url' => $this->proof_files['url'] ?? asset('storage/' . $this->proof_files['path']),
-                'name' => $this->proof_files['name'] ?? null,
-                'size' => $this->proof_files['size'] ?? null,
-                'type' => $this->proof_files['type'] ?? null,
-                'uploaded_at' => $this->proof_files['uploaded_at'] ?? null
-            ];
+        if ($this->proof_files) {
+            $files = is_string($this->proof_files) ? json_decode($this->proof_files, true) : $this->proof_files;
+            
+            if ($files && is_array($files)) {
+                // إذا كان هناك ملف صورة
+                if (isset($files['path'])) {
+                    $proofFiles = $files['url'] ?? asset('storage/' . $files['path']);
+                }
+                // إذا كان نص فقط
+                elseif (isset($files['type']) && $files['type'] === 'text_only') {
+                    $proofFiles = $files['notes'] ?? 'تم إكمال المرحلة';
+                }
+            }
         }
         
         return [

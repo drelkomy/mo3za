@@ -11,18 +11,17 @@ class StageResource extends JsonResource
     {
         $proofFiles = null;
         if ($this->proof_files) {
-            // التعامل مع JSON string أو array
             $files = is_string($this->proof_files) ? json_decode($this->proof_files, true) : $this->proof_files;
             
-            if ($files && is_array($files) && isset($files['path'])) {
-                $proofFiles = [
-                    'path' => $files['path'],
-                    'url' => $files['url'] ?? asset('storage/' . $files['path']),
-                    'name' => $files['name'] ?? null,
-                    'size' => $files['size'] ?? null,
-                    'type' => $files['type'] ?? null,
-                    'uploaded_at' => $files['uploaded_at'] ?? null
-                ];
+            if ($files && is_array($files)) {
+                // إذا كان هناك ملف صورة
+                if (isset($files['path'])) {
+                    $proofFiles = $files['url'] ?? asset('storage/' . $files['path']);
+                }
+                // إذا كان نص فقط
+                elseif (isset($files['type']) && $files['type'] === 'text_only') {
+                    $proofFiles = $files['notes'] ?? 'تم إكمال المرحلة';
+                }
             }
         }
         
