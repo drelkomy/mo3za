@@ -32,7 +32,7 @@ class StageResource extends JsonResource
             'status' => $this->status,
             'stage_number' => $this->stage_number,
             'proof_notes' => $this->proof_notes,
-            'proof_files' => $proofFiles,
+            'proof_image' => $proofFiles,
         ];
     }
 }
