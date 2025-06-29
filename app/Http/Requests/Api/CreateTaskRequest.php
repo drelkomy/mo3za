@@ -40,6 +40,7 @@ class CreateTaskRequest extends FormRequest
             'receiver_id.exists' => 'المستلم غير موجود',
             'priority.in' => 'الأولوية يجب أن تكون إما normal، urgent، high، medium أو low',
             'due_date.after' => 'تاريخ الاستحقاق يجب أن يكون بعد اليوم',
+            'total_stages.max' => ' لقد تخطيت عدد المراحل بالياقة',
             'reward_amount.min' => 'قيمة المكافأة يجب أن تكون أكبر من أو تساوي صفر',
             'reward_type.in' => 'نوع المكافأة يجب أن يكون إما cash أو other',
             'selected_members.required_without' => 'يجب تحديد مستلم أو مجموعة مستلمين',
