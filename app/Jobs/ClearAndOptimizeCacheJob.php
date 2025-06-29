@@ -18,24 +18,29 @@ class ClearAndOptimizeCacheJob implements ShouldQueue
     public function handle(): void
     {
         try {
-            Log::info('بدء تنظيف وتحسين الكاش');
-            
-            // مسح جميع أنواع الكاش
+            Log::info('🧹 بدء تنظيف وتحسين الكاش');
+
+            // 🗑️ مسح الكاش من النظام
             Cache::flush();
             Artisan::call('cache:clear');
             Artisan::call('config:clear');
             Artisan::call('route:clear');
             Artisan::call('view:clear');
-            
-            // إعادة تحسين التطبيق
+            Artisan::call('filament:optimize-clear');
+
+            // ⚡ إعادة كاش Laravel
             Artisan::call('config:cache');
             Artisan::call('route:cache');
             Artisan::call('view:cache');
-            
-            Log::info('تم تنظيف وتحسين الكاش بنجاح');
-            
+
+
+            // ⚡ كاش Filament
+            Artisan::call('filament:optimize');
+
+            Log::info('✅ تم تنظيف وتحسين كاش Laravel وFilament بنجاح');
+
         } catch (\Exception $e) {
-            Log::error('خطأ في تنظيف الكاش: ' . $e->getMessage());
+            Log::error('❌ خطأ في تنظيف الكاش: ' . $e->getMessage());
             throw $e;
         }
     }
