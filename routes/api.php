@@ -19,7 +19,7 @@ use App\Http\Controllers\Api\PackageController;
 */
 
 // مسارات المصادقة العامة - 5 طلبات في الدقيقة للضيوف
-Route::middleware('throttle:5,1')->group(function () {
+Route::middleware('throttle:8,1')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/password/reset-link', [\App\Http\Controllers\Api\PasswordResetController::class, 'sendResetLink']);
@@ -32,7 +32,7 @@ Route::match(['get', 'post'], '/payment/callback', [\App\Http\Controllers\Api\Ap
 
 
 // المسارات المحمية بالمصادقة - 60 طلبات في الدقيقة للمستخدمين
-Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:25,1'])->group(function () {
     // معلومات المستخدم الحالي - مع cache
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -45,43 +45,43 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Team Management - إدارة الفرق
     Route::post('/team/create', [TeamController::class, 'create']); // إنشاء فريق
     Route::get('/my-team', [TeamController::class, 'myTeam'])
-        ->middleware('throttle:30,1'); // عرض فريقي - 30 طلب في الدقيقة
+        ->middleware('throttle:25,1'); // عرض فريقي - 30 طلب في الدقيقة
     Route::post('/team/update-name', [TeamController::class, 'updateName']); // تعديل اسم الفريق
     Route::post('/team/remove-member', [TeamController::class, 'removeMember']); // حذف عضو
     Route::get('/team/members', [TeamController::class, 'getTeamMembers'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض بيانات الفريق مع الأعضاء
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض بيانات الفريق مع الأعضاء
     
     // Task Management - إدارة المهام
     Route::post('/team/create-task', [TeamController::class, 'createTask'])
-        ->middleware('throttle:10,1'); // 10 مهام في الدقيقة
+        ->middleware('throttle:20,1'); // 10 مهام في الدقيقة
     Route::get('/team/tasks', [TeamController::class, 'getTeamTasks'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهام الفريق
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض مهام الفريق
     Route::get('/team/rewards', [TeamController::class, 'getTeamRewards'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق
     Route::get('/team/rewards/{team}', [TeamController::class, 'teamRewards'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق حتى لو انتهى الاشتراك
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض مكافآت الفريق حتى لو انتهى الاشتراك
     // إحصائيات الفريق
     Route::get('/team/member-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getMemberStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات أعضاء الفريق
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // إحصائيات أعضاء الفريق
     Route::get('/team/members-task-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getTeamMembersTaskStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض جميع مهام أعضاء الفريق
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض جميع مهام أعضاء الفريق
     Route::post('/team/member-task-stats', [\App\Http\Controllers\Api\TeamStatsController::class, 'getMemberTaskStats'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام عضو محدد
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // إحصائيات مهام عضو محدد
     Route::get('/my-tasks', [\App\Http\Controllers\Api\TaskController::class, 'myTasks'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مهامي الشخصية
+        ->middleware(['throttle:25,1', 'cache.headers:public;max_age=300']); // عرض مهامي الشخصية
     // إدارة المهام
     Route::post('/tasks/complete-stage', [\App\Http\Controllers\Api\TaskController::class, 'completeStage'])
         ->middleware('throttle:20,1'); // 20 مرحلة في الدقيقة
     Route::post('/tasks/close', [\App\Http\Controllers\Api\TaskController::class, 'closeTask'])
-        ->middleware('throttle:10,1'); // 10 إغلاق في الدقيقة
+        ->middleware('throttle:20,1'); // 10 إغلاق في الدقيقة
     Route::post('/tasks/{task}/update-status', [\App\Http\Controllers\Api\TaskController::class, 'updateTaskStatus'])
         ->middleware('throttle:20,1'); // 20 تحديث في الدقيقة
     Route::post('/tasks/update-due-date', [\App\Http\Controllers\Api\TaskController::class, 'updateDueDate'])
-        ->middleware('throttle:10,1'); // 10 تحديث في الدقيقة
+        ->middleware('throttle:20,1'); // 10 تحديث في الدقيقة
     Route::get('/my-rewards', [\App\Http\Controllers\Api\TaskController::class, 'myRewards'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مكافآتي
+        ->middleware(['throttle:20,1', 'cache.headers:public;max_age=300']); // عرض مكافآتي
     Route::post('/tasks/{task}/stages', [\App\Http\Controllers\Api\TaskController::class, 'getTaskStages'])
-        ->middleware(['throttle:30,1', 'cache.headers:public;max_age=300']); // عرض مراحل مهمة محددة
+        ->middleware(['throttle:20,1', 'cache.headers:public;max_age=300']); // عرض مراحل مهمة محددة
     Route::post('/task-details', [\App\Http\Controllers\Api\TaskController::class, 'taskDetails']); // عرض تفاصيل المهمة ومراحلها
 
     // Packages & Subscriptions - الباقات والاشتراكات
@@ -115,7 +115,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     
 
     // Payment Callbacks - استقبال نتائج الدفع
-    Route::post('/payment/mobile-init', [\App\Http\Controllers\Api\SubscriptionController::class, 'createPaymentForMobile']); // إنشاء رابط دفع لتطبيق المحمول
+    Route::post('/payment/mobile-init', [\App\Http\Controllers\Api\SubscriptionController::class, 'createPaymentForMobile'])
+        ->middleware('throttle:6,1'); // 6 محاولات في الدقيقة
 
     // البحث
     Route::post('/search', [\App\Http\Controllers\Api\SearchController::class, 'search'])

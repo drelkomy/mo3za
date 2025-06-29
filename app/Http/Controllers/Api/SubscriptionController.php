@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\TrialStatusResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Http\Requests\MobilePaymentRequest;
+use App\Http\Resources\MobilePaymentResource;
 use App\Models\Subscription;
 use App\Models\Package;
 use App\Services\PayTabsService;
+use Illuminate\Support\Facades\Cache;
 
 class SubscriptionController extends Controller
 {
@@ -106,16 +109,18 @@ class SubscriptionController extends Controller
         ]);
     }
 
-    public function createPaymentForMobile(Request $request): JsonResponse
+    public function createPaymentForMobile(MobilePaymentRequest $request): JsonResponse
     {
-        $request->validate([
-            'package_id' => 'required|exists:packages,id'
-        ]);
-
         $user = auth()->user();
-        $package = Package::where('id', $request->package_id)
-            ->where('is_active', true)
-            ->first();
+        $packageId = $request->package_id;
+        
+        // كاش للباقة لمدة 5 دقائق
+        $package = Cache::remember("package_{$packageId}", 300, function() use ($packageId) {
+            return Package::select('id', 'name', 'price', 'is_active', 'is_trial', 'max_tasks', 'max_milestones_per_task')
+                ->where('id', $packageId)
+                ->where('is_active', true)
+                ->first();
+        });
 
         if (!$package) {
             return response()->json([
@@ -124,57 +129,49 @@ class SubscriptionController extends Controller
             ], 404);
         }
 
-        // التحقق من وجود اشتراك نشط
-        $activeSubscription = $user->subscriptions()
-            ->where('status', 'active')
-            ->where('end_date', '>', now())
-            ->first();
-
-        if ($activeSubscription) {
+        // فحص سريع للاشتراك النشط
+        if (Subscription::where('user_id', $user->id)->where('status', 'active')->where('end_date', '>', now())->exists()) {
             return response()->json([
-                'message' => 'لديك اشتراك نشط بالفعل. لا يمكنك الاشتراك في باقة جديدة حتى انتهاء الاشتراك الحالي.',
+                'message' => 'لديك اشتراك نشط بالفعل.',
                 'error' => 'active_subscription_exists'
             ], 422);
         }
 
-        // التحقق من استخدام المدة التجريبية إذا كانت الباقة تجريبية
+        // الباقة التجريبية - اشتراك مباشر
         if ($package->is_trial) {
-            $trialSubscription = $user->subscriptions()
-                ->whereHas('package', function($q) {
-                    $q->where('is_trial', true);
-                })
-                ->first();
-
-            if ($trialSubscription) {
-                return response()->json([
-                    'message' => 'لقد استفدت من المدة التجريبية من قبل. لا يمكنك الاشتراك في باقة تجريبية مرة أخرى.',
-                    'error' => 'trial_period_used'
-                ], 422);
+            // فحص سريع للتجربة السابقة
+            if (Subscription::where('user_id', $user->id)->whereHas('package', fn($q) => $q->where('is_trial', true))->exists()) {
+                return response()->json(['message' => 'لقد استفدت من المدة التجريبية من قبل.', 'error' => 'trial_period_used'], 422);
             }
-            // إذا كانت الباقة تجريبية، لا حاجة للدفع، يتم التفعيل مباشرة
+            
             $subscription = Subscription::create([
                 'user_id' => $user->id,
                 'package_id' => $package->id,
                 'status' => 'active',
                 'start_date' => now(),
-                'end_date' => now()->addDays($package->duration_days)
+                'end_date' => now()->addDays(30),
+                'price_paid' => 0,
+                'tasks_created' => 0,
+                'max_tasks' => $package->max_tasks,
+                'max_milestones_per_task' => $package->max_milestones_per_task
             ]);
             
-            return response()->json([
-                'message' => 'تم تفعيل الباقة التجريبية بنجاح',
-                'subscription_id' => $subscription->id,
-            ]);
+            return response()->json(['message' => 'تم تفعيل الباقة بنجاح', 'subscription_id' => $subscription->id, 'status' => 'active'], 201);
         }
 
-        // التحقق من أن الباقة تتطلب دفعًا (ليست مجانية أو تجريبية)
+
+
+        // فحص سعر الباقة
         if ($package->price <= 0) {
-            return response()->json([
-                'message' => 'هذه الباقة لا تتطلب دفعًا. يمكن تفعيلها مباشرة.',
-                'error' => 'no_payment_required'
-            ], 422);
+            return response()->json(['message' => 'هذه الباقة لا تتطلب دفعًا.', 'error' => 'no_payment_required'], 422);
         }
 
-        // إنشاء سجل دفع في جدول المدفوعات بحالة pending
+        // فحص بيانات المستخدم أولاً
+        if (empty($user->name) || empty($user->email)) {
+            return response()->json(['message' => 'بيانات المستخدم غير مكتملة.', 'error' => 'incomplete_user_data'], 422);
+        }
+
+        // إنشاء سجل الدفع
         $payment = \App\Models\Payment::create([
             'user_id' => $user->id,
             'package_id' => $package->id,
@@ -185,18 +182,9 @@ class SubscriptionController extends Controller
             'gateway' => 'paytabs',
         ]);
 
-        // التحقق من اكتمال بيانات المستخدم
-        if (empty($user->name) || empty($user->email)) {
-            return response()->json([
-                'message' => 'بيانات المستخدم غير مكتملة. يرجى تحديث ملفك الشخصي باسمك وبريدك الإلكتروني قبل المتابعة.',
-                'error' => 'incomplete_user_data'
-            ], 422);
-        }
-
-        // إنشاء رابط الدفع باستخدام PayTabsService
+        // إنشاء رابط الدفع
         try {
-            $payTabsService = new PayTabsService();
-            $paymentResult = $payTabsService->createPaymentPage([
+            $paymentResult = (new PayTabsService())->createPaymentPage([
                 'order_id' => $payment->order_id,
                 'description' => 'اشتراك باقة ' . $package->name,
                 'currency' => 'SAR',
@@ -209,30 +197,13 @@ class SubscriptionController extends Controller
                 'return_url_cancel' => url('/api/payment/cancel/' . $payment->id),
             ]);
 
-            if (!isset($paymentResult['payment_url'])) {
-                throw new \Exception('فشل في إنشاء رابط الدفع: الاستجابة غير مكتملة');
-            }
-
-            // إعادة الرابط إلى التطبيق
             return response()->json([
                 'message' => 'تم إنشاء رابط الدفع بنجاح',
-                'payment_url' => $paymentResult['payment_url'],
+                'payment_url' => $paymentResult['payment_url'] ?? null,
                 'payment_id' => $payment->id,
             ]);
         } catch (\Exception $e) {
-            // تسجيل الخطأ للتصحيح
-            \Illuminate\Support\Facades\Log::error('Payment URL creation failed', [
-                'user_id' => $user->id,
-                'package_id' => $package->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            // إرجاع رسالة خطأ للمستخدم
-            return response()->json([
-                'message' => 'حدث خطأ أثناء إنشاء رابط الدفع. يرجى المحاولة لاحقًا.',
-                'error' => 'payment_url_creation_failed'
-            ], 500);
+            return response()->json(['message' => 'حدث خطأ أثناء إنشاء رابط الدفع.', 'error' => 'payment_url_creation_failed'], 500);
         }
     }
 }
