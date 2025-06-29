@@ -12,14 +12,14 @@ class Package extends Model
 
     protected $fillable = [
         'name', 'price', 'max_tasks', 
-        'max_milestones_per_task', 'is_active'
+        'max_milestones_per_task', 'is_active', 'is_trial'
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'is_active' => 'boolean',
+        'is_trial' => 'boolean',
         'max_tasks' => 'integer',
-
         'max_milestones_per_task' => 'integer',
     ];
 

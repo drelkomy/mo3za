@@ -193,6 +193,9 @@ class TeamStatsController extends Controller
         $statusKey = $status ?: 'all';
         $cacheKey = "team_members_task_stats_{$userId}_{$statusKey}";
         
+        // تفريغ الكاش للمستخدم الحالي لضمان ظهور المهام الجديدة
+        $this->clearUserCache($userId);
+        
         $data = Cache::remember($cacheKey, 300, function () use ($userId, $status) {
             $team = Team::where('owner_id', $userId)->first();
             

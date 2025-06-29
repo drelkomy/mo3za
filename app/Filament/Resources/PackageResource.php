@@ -92,9 +92,8 @@ class PackageResource extends Resource
                     ->label('المراحل/مهمة')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\IconColumn::make('is_trial')
-                    ->label('تجريبية')
-                    ->boolean(),
+                Tables\Columns\ToggleColumn::make('is_trial')
+                    ->label('تجريبية'),
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('نشط'),
                 Tables\Columns\TextColumn::make('created_at')

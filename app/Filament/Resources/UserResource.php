@@ -219,7 +219,8 @@ class UserResource extends Resource
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        return auth()->user()?->hasRole('admin');
+        // السماح بالحذف فقط للمستخدمين الذين لديهم دور admin، ولكن منع حذف المستخدمين الذين لديهم دور admin
+        return auth()->user()?->hasRole('admin') && !$record->hasRole('admin');
     }
 
     public static function getPages(): array

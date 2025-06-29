@@ -31,7 +31,6 @@ class ClearAndOptimizeCacheJob implements ShouldQueue
             // ⚡ إعادة كاش Laravel
             Artisan::call('config:cache');
             Artisan::call('route:cache');
-            Artisan::call('view:cache');
 
 
             // ⚡ كاش Filament
